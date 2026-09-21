@@ -1,0 +1,4 @@
+date,source,grain,page,query,impressions,clicks,position,product_clicks,leads,orders,revenue,cost
+2026-01-01,test-fixture,page,https://example.org/test/,,100,4,8,,,,,
+2026-01-01,test-fixture,page_query,https://example.org/test/,тестовый запрос,50,2,9,,,,,
+2026-01-01,test-fixture,conversion,https://example.org/test/,,,,,2,1,0,0,0

@@ -1,0 +1,92 @@
+[
+  {
+    "id": "topic-1",
+    "topic": "Куринуки — изготовление конкретной чаши по этапам",
+    "demand": {
+      "status": "unknown",
+      "evidence": []
+    },
+    "decision": "needs_maker_facts"
+  },
+  {
+    "id": "topic-2",
+    "topic": "Следы инструмента и решение мастера о поверхности",
+    "demand": {
+      "status": "unknown",
+      "evidence": []
+    },
+    "decision": "needs_maker_facts"
+  },
+  {
+    "id": "topic-3",
+    "topic": "Тяван и чаван — терминология с проверенными источниками",
+    "demand": {
+      "status": "unknown",
+      "evidence": []
+    },
+    "decision": "needs_maker_facts"
+  },
+  {
+    "id": "topic-4",
+    "topic": "Как выбрать первую чашу для маття",
+    "demand": {
+      "status": "unknown",
+      "evidence": []
+    },
+    "decision": "needs_maker_facts"
+  },
+  {
+    "id": "topic-5",
+    "topic": "Как понять размер чаши по фотографии",
+    "demand": {
+      "status": "unknown",
+      "evidence": []
+    },
+    "decision": "needs_maker_facts"
+  },
+  {
+    "id": "topic-6",
+    "topic": "Исинская техника и происхождение глины — не одно и то же",
+    "demand": {
+      "status": "unknown",
+      "evidence": []
+    },
+    "decision": "needs_maker_facts"
+  },
+  {
+    "id": "topic-7",
+    "topic": "Конструкция чайника — показать крышку и слив",
+    "demand": {
+      "status": "unknown",
+      "evidence": []
+    },
+    "decision": "needs_maker_facts"
+  },
+  {
+    "id": "topic-8",
+    "topic": "Что составляет цену конкретной ручной работы",
+    "demand": {
+      "status": "unknown",
+      "evidence": []
+    },
+    "decision": "needs_maker_facts"
+  },
+  {
+    "id": "topic-9",
+    "topic": "Одно изделие — от исходной формы до результата",
+    "demand": {
+      "status": "unknown",
+      "evidence": []
+    },
+    "decision": "needs_maker_facts"
+  },
+  {
+    "id": "topic-10",
+    "topic": "Уход за конкретной керамикой по инструкции мастера",
+    "demand": {
+      "status": "unknown",
+      "evidence": []
+    },
+    "decision": "needs_maker_facts"
+  }
+]

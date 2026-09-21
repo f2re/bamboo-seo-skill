@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+.coverage
+bamboo.json
+content/
+analytics/
+exports/
+site/
+.env
+.env.*
+!.env.example
+.bamboo-locks/
+.bamboo/
+*.zip

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "bowl-01",
+  "confirmed": false,
+  "name": null,
+  "type": null,
+  "technique": null,
+  "clay": null,
+  "clay_origin": null,
+  "glaze": null,
+  "volume_ml": null,
+  "dimensions_mm": null,
+  "firing_c": null,
+  "price": null,
+  "currency": "RUB",
+  "availability": null,
+  "author": null,
+  "allowed_claims": [],
+  "unknown_fields": [
+    "technique",
+    "clay",
+    "volume_ml",
+    "price"
+  ],
+  "note": "ШАБЛОН. Не реальный товар; заполнить и подтвердить у мастера."
+}
