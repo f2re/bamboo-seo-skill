@@ -202,7 +202,7 @@ def snapshot(root: Path, name: str) -> str:
     for photo in pack.get("photos", []):
         paths.add(safe(root, photo["path"]))
     for path in safe(root, "content/voice").glob("*.md"):
-        paths.add(safe(root, path.relative_to(root.resolve())))
+        paths.add(safe(root, path.relative_to(root.resolve()).as_posix()))
     for filename in ("AGENTS.md", "CLAUDE.md", "GEMINI.md"):
         path = safe(root, filename)
         if path.is_file():
