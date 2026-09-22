@@ -148,6 +148,16 @@ class CoreTests(Fixture):
         self.good();self.change('pack.json',lambda d:d['formats']['card'].update(cta=''))
         self.assertFalse(q.validate(self.root,'example')['ok'])
 
+    def test_optional_seo_context_validation(self):
+        self.good()
+        self.change('brief.json',lambda d:d['seo'].update(page_type='bad-type'))
+        self.assertFalse(q.validate(self.root,'example')['ok'])
+        self.change('brief.json',lambda d:d['seo'].update(page_type='article',target_url='javascript:bad'))
+        self.assertFalse(q.validate(self.root,'example')['ok'])
+        self.change('brief.json',lambda d:d['seo'].update(target_url='https://example.org/journal/example/'))
+        self.assertTrue(q.validate(self.root,'example')['ok'])
+
+
     def test_photo_required(self):
         self.good(photo=True);self.change('pack.json',lambda d:d.update(photos=[]))
         self.assertFalse(q.validate(self.root,'example')['ok'])
@@ -213,6 +223,9 @@ class CoreTests(Fixture):
         self.assertEqual(result['status'],'built_locally')
         text=(self.root/'site/journal/example/index.html').read_text()
         self.assertIn('rel="canonical"',text);self.assertNotIn('noindex',text)
+        self.assertIn('property="og:type" content="article"',text)
+        self.assertIn('"@type":"Article"',text)
+        self.assertIn('"@type":"BreadcrumbList"',text)
         self.assertTrue((self.root/'site/sitemap.xml').exists())
 
     def test_cli_validate_and_dry_run(self):
