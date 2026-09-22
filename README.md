@@ -135,6 +135,10 @@ python bamboo.py analytics-import --file your-metrics.csv
 python bamboo.py analytics-pull --provider google --start 2026-09-01 --end 2026-09-14
 python bamboo.py analytics-pull --provider yandex --start 2026-09-08 --end 2026-09-21
 python bamboo.py analytics-report --end 2026-09-14 --days 7
+# Опционально: квотируемая расширенная Яндекс URL×query выгрузка
+python bamboo.py analytics-yandex-export-dates
+python bamboo.py analytics-yandex-export-start --date 2026-09-20 --path /journal/chawan/
+python bamboo.py analytics-yandex-export-status <task-uuid>
 ```
 
 Даты — примеры синтаксиса, замените на нужный доступный период.
