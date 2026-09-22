@@ -141,16 +141,25 @@ python bamboo.py analytics-report --end 2026-09-14 --days 7
 python bamboo.py analytics-yandex-export-dates
 python bamboo.py analytics-yandex-export-start --date 2026-09-20 --path /journal/chawan/
 python bamboo.py analytics-yandex-export-status <task-uuid>
+# После скачивания готового β-CSV:
+python bamboo.py analytics-yandex-import --file yandex-url-query.csv
+
+# Проверка коммерческого графа:
+python bamboo.py commerce-build
 ```
 
 Даты — примеры синтаксиса, замените на нужный доступный период.
 Google: Search Console `page` и точный `page_query`, с пагинацией.
 Яндекс: Query Analytics отдельно по URL и QUERY за доступные последние две недели. Для QUERY
 связанный URL хранится только как `page_hint`: это не полная разбивка запрос × страница.
-Отчёт теперь показывает запросы, intent-hints, кандидатов на несколько URL и отдельный conversion-блок.
+Отчёт показывает запросы, словарные query-кластеры, intent-hints, кандидатов на несколько URL,
+intent mismatch, отдельные conversion-метрики и воронку только при явном совпадении источника.
 CSV допускает подтверждённые переходы к товару, обращения, заказы, выручку и затраты с grain=`conversion`.
 Повторный импорт обновляет строки, не удваивает их; пропуски не становятся нулями.
 Отчёт предлагает изменения, но **не переписывает стратегию, статьи и правила автоматически**.
+Расширенный Яндекс CSV импортируется как точный `yandex_enhanced/page_query`, сохраняя
+региональную детализацию отдельно. `commerce-build` строит `content/commerce-graph.json`
+с кластерами, связями и предложениями внутренней перелинковки.
 Настройка доступа и ограничения: [аналитика](docs/ANALYTICS.md).
 
 ## Структура
