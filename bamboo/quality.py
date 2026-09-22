@@ -149,11 +149,13 @@ def validate(root: Path, name: str) -> dict:
             if product.get("vk_product_id") is not None and not isinstance(product.get("vk_product_id"), (str, int)):
                 fail(f"Паспорт товара {pid}: vk_product_id должен быть строкой/числом или null")
         all_public = [pack.get("title", ""), pack.get("description", "")]
+        used_claim_ids = set()
         for fmt, item in pack.get("formats", {}).items():
             text, cta = item["text"], item["cta"]
             if not text.strip() or not cta.strip():
                 fail(f"{fmt}: нужны текст и следующий шаг cta")
             used = set(item.get("claims", []))
+            used_claim_ids.update(used)
             if used - registry.keys() or set(MARK.findall(text + cta)) - used:
                 fail(f"{fmt}: неизвестное или незарегистрированное утверждение")
             if not used:
@@ -195,6 +197,19 @@ def validate(root: Path, name: str) -> dict:
             all_public += [photo.get("alt", ""), photo.get("caption", "")]
         if cfg["quality"].get("require_product_photos", True) and set(product_ids) - photographed:
             fail("Для каждого товара нужна фотография, связанная с его product_id")
+
+        metadata_text = "\n".join([pack.get("title", ""), pack.get("description", "")] +
+                                  [x for photo in pack.get("photos", [])
+                                   for x in (photo.get("alt", ""), photo.get("caption", ""))])
+        metadata_claims = [registry[c]["text"] for c in used_claim_ids if c in registry]
+        for gap in evidence_gaps(metadata_text, metadata_claims):
+            fail(f"metadata: {gap['message']}")
+        norm = lambda s: re.sub(r"\s+", "", s).replace(",", ".").lower()
+        metadata_allowed = {norm(x) for text in metadata_claims for x in NUMBER.findall(text)}
+        for value in NUMBER.findall(metadata_text):
+            if norm(value) not in metadata_allowed:
+                fail(f"metadata: числовая характеристика без связанного факта: {value}")
+
         for finding in lint("\n".join(all_public)):
             (errors if finding["level"] == "error" else warnings).append(finding)
         if "article" in wanted and not pack.get("description", "").strip():
