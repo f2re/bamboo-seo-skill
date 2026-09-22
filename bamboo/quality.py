@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 from .core import (BambooError, CHECKS, FORMATS, approval_token, config, file_digest,
                    job_path, now, read_json, safe, slug, snapshot, write_json)
+from .domain import evidence_gaps
 
 CLICHES = ("непревзойдённое мастерство", "шедевр эпохи", "истинные ценители прекрасного",
            "воплощение древней мудрости", "энергия глины")
@@ -47,8 +48,13 @@ def lint(text: str) -> list[dict]:
     for pattern in BAIT:
         if re.search(pattern, low):
             result.append(issue("warning", "clickbait", f"Проверить обещание/кликбейт: {pattern}"))
-    if re.search(HEALTH, low):
-        result.append(issue("warning", "health_claim", "Проверить контекст медицинского заявления; не публиковать неподтверждённое обещание"))
+    for match in re.finditer(HEALTH, low):
+        context = low[max(0, match.start() - 40):match.start()]
+        negated = re.search(r"(?:\bне\b|нет доказательств|нельзя утверждать|миф|не доказан)", context) is not None
+        level = "warning" if negated else "error"
+        message = ("Упоминание лечебного/псевдонаучного свойства в отрицательном контексте: проверить формулировку"
+                   if negated else "Медицинское/псевдонаучное обещание запрещено без надёжного основания")
+        result.append(issue(level, "health_claim", message))
     if re.search(r"\b(?:TODO|TBD|ЗАПОЛНИТЬ)\b|<script\b", text, re.I):
         result.append(issue("error", "placeholder", "Остался шаблон или исполняемый HTML"))
     if re.search(r"(?:sk-[A-Za-z0-9]{20,}|Bearer\s+[A-Za-z0-9._-]{15,}|-----BEGIN .*PRIVATE KEY)", text):
@@ -143,22 +149,27 @@ def validate(root: Path, name: str) -> dict:
             if product.get("vk_product_id") is not None and not isinstance(product.get("vk_product_id"), (str, int)):
                 fail(f"Паспорт товара {pid}: vk_product_id должен быть строкой/числом или null")
         all_public = [pack.get("title", ""), pack.get("description", "")]
+        used_claim_ids = set()
         for fmt, item in pack.get("formats", {}).items():
             text, cta = item["text"], item["cta"]
             if not text.strip() or not cta.strip():
                 fail(f"{fmt}: нужны текст и следующий шаг cta")
             used = set(item.get("claims", []))
+            used_claim_ids.update(used)
             if used - registry.keys() or set(MARK.findall(text + cta)) - used:
                 fail(f"{fmt}: неизвестное или незарегистрированное утверждение")
             if not used:
                 fail(f"{fmt}: должен опираться хотя бы на один подтверждённый факт")
-            supported = " ".join(registry[c]["text"] for c in used if c in registry)
+            supported_claims = [registry[c]["text"] for c in used if c in registry]
+            supported = " ".join(supported_claims)
+            full = clean(text + "\n" + cta)
+            for gap in evidence_gaps(full, supported_claims):
+                fail(f"{fmt}: {gap['message']}")
             norm = lambda s: re.sub(r"\s+", "", s).replace(",", ".").lower()
             allowed = {norm(x) for x in NUMBER.findall(supported)}
             for value in NUMBER.findall(text + " " + cta):
                 if norm(value) not in allowed:
                     fail(f"{fmt}: числовая характеристика без связанного факта: {value}")
-            full = clean(text + "\n" + cta)
             lower, upper, mode = FORMATS.get(fmt, (0, 0, "none"))
             lengths = ([len(x.strip()) for x in clean(text).splitlines() if x.strip()] if mode == "lines"
                        else [len(re.findall(r"\b[\w-]+\b", full)) if mode == "words" else len(full)])
@@ -186,6 +197,19 @@ def validate(root: Path, name: str) -> dict:
             all_public += [photo.get("alt", ""), photo.get("caption", "")]
         if cfg["quality"].get("require_product_photos", True) and set(product_ids) - photographed:
             fail("Для каждого товара нужна фотография, связанная с его product_id")
+
+        metadata_text = "\n".join([pack.get("title", ""), pack.get("description", "")] +
+                                  [x for photo in pack.get("photos", [])
+                                   for x in (photo.get("alt", ""), photo.get("caption", ""))])
+        metadata_claims = [registry[c]["text"] for c in used_claim_ids if c in registry]
+        for gap in evidence_gaps(metadata_text, metadata_claims):
+            fail(f"metadata: {gap['message']}")
+        norm = lambda s: re.sub(r"\s+", "", s).replace(",", ".").lower()
+        metadata_allowed = {norm(x) for text in metadata_claims for x in NUMBER.findall(text)}
+        for value in NUMBER.findall(metadata_text):
+            if norm(value) not in metadata_allowed:
+                fail(f"metadata: числовая характеристика без связанного факта: {value}")
+
         for finding in lint("\n".join(all_public)):
             (errors if finding["level"] == "error" else warnings).append(finding)
         if "article" in wanted and not pack.get("description", "").strip():

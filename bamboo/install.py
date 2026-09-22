@@ -102,7 +102,7 @@ def _install(source: Path, target: Path, systems: set[str], dry_run: bool = Fals
         for file in (source / folder).rglob("*"):
             if file.is_file() and not file.is_symlink() and "__pycache__" not in file.parts and file.suffix != ".pyc":
                 files[engine + "/" + str(file.relative_to(source)).replace("\\", "/")] = file.read_text(encoding="utf-8")
-    for filename in ("LICENSE", "NOTICE.md", "README.md"):
+    for filename in ("LICENSE", "NOTICE.md", "README.md", "CHANGELOG.md"):
         files[engine + "/" + filename] = (source / filename).read_text(encoding="utf-8")
     files["bamboo.py"] = ('#!/usr/bin/env python3\nimport sys\nfrom pathlib import Path\n'
         'sys.path.insert(0, str(Path(__file__).resolve().parent / ".bamboo" / "toolkit"))\n'

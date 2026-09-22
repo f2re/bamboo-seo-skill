@@ -14,6 +14,7 @@
 - Antigravity rules: https://antigravity.google/docs/rules-workflows/
 - Antigravity custom subagents: https://antigravity.google/docs/subagents?tab=cli
 - Search Console query: https://developers.google.com/webmaster-tools/v1/searchanalytics/query
+- Google merchant Product/Offer structured data: https://developers.google.com/search/docs/appearance/structured-data/merchant-listing
 - OAuth refresh: https://developers.google.com/identity/protocols/oauth2/web-server#offline
 - Яндекс Query Analytics (URL и QUERY): https://yandex.ru/dev/webmaster/doc/ru/reference/host-query-analytics
 - Яндекс расширенная выгрузка URL×query (β): https://yandex.ru/dev/webmaster/doc/ru/reference/enhanced-export

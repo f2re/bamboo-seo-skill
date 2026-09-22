@@ -18,67 +18,178 @@
     {
       "id": "kurinuki",
       "preferred_ru": "Куринуки",
-      "aliases": ["куринуки", "kurinuki"],
+      "aliases": [
+        "куринуки",
+        "kurinuki"
+      ],
       "kind": "technique",
       "definition": "Техника ручного формообразования с выработкой формы из цельного объёма глины.",
-      "do_not_infer": ["country_of_making", "clay_origin", "clay_type", "firing_temperature", "food_safety"]
+      "do_not_infer": [
+        "country_of_making",
+        "clay_origin",
+        "clay_type",
+        "firing_temperature",
+        "food_safety"
+      ]
     },
     {
       "id": "chawan",
       "preferred_ru": "тяван",
-      "aliases": ["тяван", "чаван", "chawan", "茶碗", "чаша для маття"],
+      "aliases": [
+        "тяван",
+        "чаван",
+        "chawan",
+        "茶碗",
+        "чаша для маття"
+      ],
       "kind": "vessel",
       "definition": "Чайная чаша; конкретное назначение для маття подтверждается паспортом изделия.",
-      "do_not_infer": ["matcha_use", "school", "origin"]
+      "do_not_infer": [
+        "matcha_use",
+        "school",
+        "origin"
+      ],
+      "patterns": [
+        "\\bчаш(?:а|и|у|е|ей|ами|ах)\\s+для\\s+маття\\b"
+      ]
     },
     {
       "id": "matcha",
       "preferred_ru": "маття",
-      "aliases": ["маття", "матча", "matcha", "抹茶"],
+      "aliases": [
+        "маття",
+        "матча",
+        "matcha",
+        "抹茶"
+      ],
       "kind": "tea",
       "definition": "Порошковый японский чай.",
-      "do_not_infer": ["vessel_suitability"]
+      "do_not_infer": [
+        "vessel_suitability"
+      ]
     },
     {
       "id": "yixing",
       "preferred_ru": "Исин",
-      "aliases": ["исин", "Yixing", "宜兴"],
+      "aliases": [
+        "исин",
+        "Yixing",
+        "宜兴"
+      ],
       "kind": "place_tradition",
       "definition": "Географическое название и связанная с ним керамическая традиция.",
-      "do_not_infer": ["clay_origin", "clay_composition", "place_of_making"]
+      "do_not_infer": [
+        "clay_origin",
+        "clay_composition",
+        "place_of_making"
+      ]
     },
     {
       "id": "yixing-clay",
       "preferred_ru": "исинская глина",
-      "aliases": ["исинская глина", "Yixing clay", "zisha", "紫砂"],
+      "aliases": [
+        "исинская глина",
+        "Yixing clay",
+        "zisha",
+        "紫砂"
+      ],
       "kind": "material_claim",
       "definition": "Материальное/географическое утверждение, требующее источника для конкретного изделия.",
       "requires_evidence": true,
-      "do_not_infer": ["health_benefit", "water_purification", "guaranteed_taste_improvement"]
+      "do_not_infer": [
+        "health_benefit",
+        "water_purification",
+        "guaranteed_taste_improvement"
+      ],
+      "patterns": [
+        "\\bисинск(?:ая|ой|ую|ою|ие|их|им|ими)\\s+глин(?:а|ы|у|е|ой|ою|ами|ах)\\b"
+      ]
     },
     {
       "id": "gongfu-cha",
       "preferred_ru": "гунфу ча",
-      "aliases": ["гунфу ча", "гун фу ча", "gongfu cha", "功夫茶"],
+      "aliases": [
+        "гунфу ча",
+        "гун фу ча",
+        "gongfu cha",
+        "功夫茶"
+      ],
       "kind": "tea_practice",
       "definition": "Обобщающее обозначение китайских практик заваривания; не одна неизменная церемония.",
-      "do_not_infer": ["single_canonical_ritual", "national_belief"]
+      "do_not_infer": [
+        "single_canonical_ritual",
+        "national_belief"
+      ]
     },
     {
       "id": "piala",
       "preferred_ru": "пиала",
-      "aliases": ["пиала", "чайная пиала"],
+      "aliases": [
+        "пиала",
+        "чайная пиала"
+      ],
       "kind": "vessel",
       "definition": "Небольшая чаша без обязательной привязки к одной чайной традиции.",
-      "do_not_infer": ["matcha_use", "gongfu_use", "origin"]
+      "do_not_infer": [
+        "matcha_use",
+        "gongfu_use",
+        "origin"
+      ]
     },
     {
       "id": "glaze",
       "preferred_ru": "глазурь",
-      "aliases": ["глазурь", "glaze"],
+      "aliases": [
+        "глазурь",
+        "glaze"
+      ],
       "kind": "material_finish",
       "definition": "Покрытие керамики; безопасность и режимы относятся к конкретной глазури/изделию.",
-      "do_not_infer": ["food_safety", "composition", "temperature_limit"]
+      "do_not_infer": [
+        "food_safety",
+        "composition",
+        "temperature_limit"
+      ]
+    },
+    {
+      "id": "teapot",
+      "preferred_ru": "чайник",
+      "aliases": [
+        "чайник",
+        "чайничек",
+        "teapot"
+      ],
+      "kind": "vessel",
+      "definition": "Сосуд для заваривания; материал, объём и назначение относятся к конкретному изделию.",
+      "do_not_infer": [
+        "clay_origin",
+        "clay_type",
+        "volume",
+        "tea_suitability"
+      ]
+    },
+    {
+      "id": "food-contact-safety",
+      "preferred_ru": "безопасность для контакта с пищей",
+      "aliases": [
+        "безопасна для пищи",
+        "безопасен для пищи",
+        "пищевой контакт",
+        "контакт с пищей",
+        "food safe",
+        "food-safe"
+      ],
+      "kind": "safety_claim",
+      "definition": "Утверждение о пригодности конкретного материала/покрытия для контакта с пищей.",
+      "requires_evidence": true,
+      "do_not_infer": [
+        "from_appearance",
+        "from_glaze_color",
+        "from_firing_temperature_alone"
+      ],
+      "patterns": [
+        "\\bбезопасн(?:а|ая|о|ый|ые|ую|ой|ых)\\s+для\\s+пищи\\b"
+      ]
     }
   ]
 }

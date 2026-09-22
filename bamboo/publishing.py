@@ -8,7 +8,7 @@ import mimetypes
 import re
 import shutil
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .core import (BambooError, approval_token, config, file_digest, job_path, now,
                    read_json, safe, snapshot, write_json, write_text)
@@ -102,6 +102,17 @@ def page(title: str, description: str, content: str, canonical: str | None = Non
             f'<body><nav>Bamboo Pottery{" · ЧЕРНОВИК" if draft else ""}</nav><main><h1>{esc(title)}</h1>{content}</main></body></html>')
 
 
+def tracking_url(url: str, campaign: str) -> str:
+    """Предложенный VK UTM URL; существующую UTM-разметку не перезаписывать."""
+    value = http_url(url)
+    parsed = urlsplit(value)
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    if any(key.casefold().startswith("utm_") for key, _ in pairs):
+        return value
+    pairs += [("utm_source", "vk"), ("utm_medium", "social"), ("utm_campaign", campaign)]
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(pairs), parsed.fragment))
+
+
 def export(root: Path, name: str) -> dict:
     report = validate(root, name)
     if not report["ok"]:
@@ -135,9 +146,19 @@ def export(root: Path, name: str) -> dict:
     write_json(dest / "commerce.json", commerce)
     if "vk" in pack["formats"]:
         vk = pack["formats"]["vk"]
-        write_json(dest / "vk.json", {"text": clean(vk["text"]), "cta": clean(vk["cta"]),
-                   "products": products, "photos": photo_manifest,
-                   "note": "Пакет для ручной/авторизованной публикации; API ВК не вызывался."})
+        tracked = [{"product_id": x["id"], "original_url": x["product_url"],
+                    "suggested_url": tracking_url(x["product_url"], name)}
+                   for x in products if x.get("product_url")]
+        write_json(dest / "vk.json", {
+            "text": clean(vk["text"]), "cta": clean(vk["cta"]),
+            "products": products, "photos": photo_manifest,
+            "attachment_order": [x["file"] for x in photo_manifest],
+            "catalog_items": [x["vk_product_id"] for x in products if x.get("vk_product_id") is not None],
+            "recommended_cta_type": "product" if products else "message",
+            "tracking": {"utm_source": "vk", "utm_medium": "social", "utm_campaign": name,
+                         "urls": tracked},
+            "note": "UTM-ссылки — предложения для измерения; существующие utm_* не перезаписываются. API ВК не вызывался."
+        })
     content = (body(root, name, urls) if "article" in pack["formats"] else
                "".join(f"<h2>{fmt}</h2>" + markdown(v["text"]) + markdown(v["cta"]) for fmt, v in pack["formats"].items()))
     write_text(dest / "preview.html", page(pack["title"], pack["description"], content))
