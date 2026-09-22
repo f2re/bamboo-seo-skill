@@ -138,6 +138,10 @@ def validate(root: Path, name: str) -> dict:
             product = read_json(safe(root, f"content/products/{slug(pid)}.json"))
             if product.get("id") != pid or product.get("confirmed") is not True:
                 fail(f"Паспорт товара {pid} не подтверждён мастером")
+            if product.get("product_url"):
+                http_url(product["product_url"])
+            if product.get("vk_product_id") is not None and not isinstance(product.get("vk_product_id"), (str, int)):
+                fail(f"Паспорт товара {pid}: vk_product_id должен быть строкой/числом или null")
         all_public = [pack.get("title", ""), pack.get("description", "")]
         for fmt, item in pack.get("formats", {}).items():
             text, cta = item["text"], item["cta"]
