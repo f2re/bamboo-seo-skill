@@ -80,8 +80,11 @@ class Fixture(unittest.TestCase):
 class CoreTests(Fixture):
     def test_init_preserves_config(self):
         path=self.root/'bamboo.json';obj=read_json(path);obj['brand']='CUSTOM';write_json(path,obj)
+        collections=self.root/'content/collections'
+        if collections.exists(): collections.rmdir()
         self.assertEqual(init(self.root)['status'],'exists')
         self.assertEqual(config(self.root)['brand'],'CUSTOM')
+        self.assertTrue(collections.is_dir())
 
     def test_paths(self):
         for value in ('../escape','/tmp/escape','a/../../escape','a\\b'):
