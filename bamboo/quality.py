@@ -83,6 +83,18 @@ def validate(root: Path, name: str) -> dict:
             fail("demand.status должен быть measured/proxy/unknown")
         if brief.get("demand", {}).get("status") in ("measured", "proxy") and not brief["demand"].get("evidence"):
             fail("Измеренный/косвенный спрос требует указания evidence")
+        seo = brief.get("seo")
+        if seo is not None:
+            if not isinstance(seo, dict) or not isinstance(seo.get("related_urls", []), list):
+                fail("brief.seo: нужен объект с related_urls-массивом")
+            elif seo.get("page_type") not in (None, "product", "category", "article", "technique", "term", "social"):
+                fail("brief.seo.page_type: product/category/article/technique/term/social или null")
+            else:
+                for key in ("target_url",):
+                    if seo.get(key):
+                        http_url(seo[key])
+                for url in seo.get("related_urls", []):
+                    http_url(url)
         if not brief.get("master_notes", "").strip() or brief.get("master_notes_public") is not True:
             fail("Нужны фактура мастера и master_notes_public=true (разрешение на её использование)")
         if not pack.get("title", "").strip():
