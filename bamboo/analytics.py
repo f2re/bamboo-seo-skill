@@ -466,9 +466,9 @@ def _query_records(rows: list[dict], current_start: date, minimum: float) -> lis
 def _query_clusters(records: list[dict]) -> list[dict]:
     groups = defaultdict(list)
     for item in records:
-        groups[(item["intent_hint"], item["cluster_hint"])].append(item)
+        groups[(item["source"], item["intent_hint"], item["cluster_hint"])].append(item)
     result = []
-    for (intent, cluster), items in groups.items():
+    for (source, intent, cluster), items in groups.items():
         impressions = sum((x["current"]["impressions"] or 0) for x in items)
         clicks = sum((x["current"]["clicks"] or 0) for x in items)
         weighted = [(x["current"]["position"], x["current"]["impressions"])
@@ -477,7 +477,7 @@ def _query_clusters(records: list[dict]) -> list[dict]:
         pages = sorted({x["page"] for x in items if x["page"]})
         hints = sorted({x["page_hint"] for x in items if x["page_hint"]})
         queries = sorted(items, key=lambda x: x["current"]["impressions"] or 0, reverse=True)[:10]
-        result.append({"intent_hint": intent, "cluster_hint": cluster, "impressions": impressions,
+        result.append({"source": source, "intent_hint": intent, "cluster_hint": cluster, "impressions": impressions,
                        "clicks": clicks, "ctr": clicks / impressions if impressions else None,
                        "position": position, "pages": pages, "page_hints": hints,
                        "queries": [{"query": x["query"], "impressions": x["current"]["impressions"],
@@ -633,7 +633,7 @@ def report(root: Path, end: str, days: int = 7) -> dict:
     if clusters:
         lines.append("\n# Кластеры спроса")
         for item in clusters[:15]:
-            lines.append(f'- {item["cluster_hint"]} / {item["intent_hint"]}: показы {item["impressions"]}, '
+            lines.append(f'- {item["source"]}: {item["cluster_hint"]} / {item["intent_hint"]}: показы {item["impressions"]}, '
                          f'клики {item["clicks"]}, CTR {item["ctr"]}.')
     if candidates:
         lines.append("\n# Кандидаты на каннибализацию")
