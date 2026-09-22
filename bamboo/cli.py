@@ -10,7 +10,7 @@ from datetime import date
 from pathlib import Path
 
 from . import __version__
-from . import analytics, publishing, quality
+from . import analytics, commerce, publishing, quality
 from .core import (BambooError, approval_token, config, file_digest, init, job_path,
                    lock, new_job, read_json, safe, snapshot)
 from .install import SYSTEMS, install, uninstall
@@ -44,6 +44,9 @@ def parser() -> argparse.ArgumentParser:
     a.add_argument("path", type=Path)
     a = sub.add_parser("analytics-import")
     a.add_argument("--file", required=True, type=Path)
+    a = sub.add_parser("analytics-yandex-import", help="Импортировать готовый расширенный Яндекс URL×query CSV")
+    a.add_argument("--file", required=True, type=Path)
+    sub.add_parser("commerce-build", help="Построить commerce graph и предложения внутренней перелинковки")
     a = sub.add_parser("analytics-pull", help="Прочитать API; конфиг и OAuth задаёт владелец")
     a.add_argument("--provider", required=True, choices=["google", "yandex"])
     a.add_argument("--start", required=True)
@@ -134,6 +137,10 @@ def dispatch(a: argparse.Namespace) -> dict:
             return publishing.wp_reconcile(root, a.slug)
         if cmd == "analytics-import":
             return analytics.import_csv(root, a.file)
+        if cmd == "analytics-yandex-import":
+            return analytics.import_yandex_enhanced_csv(root, a.file)
+        if cmd == "commerce-build":
+            return commerce.build_graph(root)
         if cmd == "analytics-pull":
             return analytics.pull(root, a.provider, a.start, a.end)
         if cmd == "analytics-report":
