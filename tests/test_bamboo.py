@@ -353,6 +353,54 @@ class AnalyticsTests(Fixture):
         self.assertEqual(len(rows),1);self.assertEqual(rows[0]['query'],'')
         self.assertEqual(rows[0]['clicks'],10);self.assertIsNone(rows[0]['impressions'])
 
+    def test_yandex_query_is_separate_grain(self):
+        item={'text_indicator':{'type':'QUERY','value':'купить тяван'},
+              'popular_complementary_indicator':{'type':'URL','value':'https://example.org/chawan/'},
+              'statistics':[{'date':'2026-09-21','field':'CLICKS','value':3},
+                            {'date':'2026-09-21','field':'IMPRESSIONS','value':90},
+                            {'date':'2026-09-21','field':'POSITION','value':6}]}
+        with patch('bamboo.analytics.request',return_value={'count':1,'text_indicator_to_statistics':[item]}) as req:
+            rows=a.yandex_rows('u','h','secret','2026-09-20','2026-09-21','QUERY')
+        self.assertEqual(rows[0]['grain'],'query')
+        self.assertEqual(rows[0]['query'],'купить тяван')
+        self.assertEqual(rows[0]['page'],'https://example.org/chawan/')
+        self.assertEqual(req.call_args.kwargs['payload']['text_indicator'],'QUERY')
+        self.assertEqual(a.normalize(rows[0])['grain'],'query')
+
+    def test_report_uses_queries_and_flags_multi_url_candidate(self):
+        rows=[
+            self.row(impressions=300,clicks=15),
+            self.row(source='google',grain='page_query',query='как выбрать тяван',
+                     page='https://example.org/a',impressions=120,clicks=2,position=8),
+            self.row(source='google',grain='page_query',query='как выбрать тяван',
+                     page='https://example.org/b',impressions=110,clicks=1,position=9),
+            self.row(source='yandex',grain='query',query='купить тяван',
+                     page='https://example.org/catalog/chawan',impressions=140,clicks=5,position=7),
+        ]
+        a.ingest(self.root,rows)
+        out=a.report(self.root,'2026-09-21',1)
+        self.assertEqual(out['query_count_total'],3)
+        self.assertEqual(out['queries'][0]['intent_hint'] in
+                         ('informational','transactional','commercial_research','unknown','branded'),True)
+        yandex=[x for x in out['queries'] if x['source']=='yandex'][0]
+        self.assertIsNone(yandex['page'])
+        self.assertEqual(yandex['page_hint'],'https://example.org/catalog/chawan')
+        self.assertEqual(len(out['cannibalization_candidates']),1)
+        self.assertEqual(len(out['cannibalization_candidates'][0]['pages']),2)
+
+    def test_conversion_rows_are_reported_separately(self):
+        a.ingest(self.root,[self.row(source='manual',grain='conversion',query='',
+            impressions=None,clicks=None,product_clicks=20,leads=5,orders=2,revenue=10000,cost=1000)])
+        out=a.report(self.root,'2026-09-21',1)
+        self.assertEqual(out['pages'],[])
+        self.assertEqual(out['conversions'][0]['current']['orders'],2)
+        self.assertEqual(out['conversions'][0]['current']['lead_to_order_rate'],0.4)
+
+    def test_query_intent_hint(self):
+        self.assertEqual(a.query_intent_hint('купить тяван ручной работы'),'transactional')
+        self.assertEqual(a.query_intent_hint('как выбрать тяван'),'commercial_research')
+        self.assertEqual(a.query_intent_hint('Bamboo Pottery'),'branded')
+
     def test_oauth_form_and_secrets_not_in_url(self):
         with patch.dict(os.environ,{'BAMBOO_GSC_CLIENT_ID':'client','BAMBOO_GSC_CLIENT_SECRET':'SECRET','BAMBOO_GSC_REFRESH_TOKEN':'REFRESH'},clear=True):
             with patch('bamboo.analytics.request',return_value={'access_token':'result'}) as req:
