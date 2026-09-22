@@ -56,8 +56,17 @@ python bamboo.py analytics-yandex-export-status 2f1c5d3b-7d9b-4c3e-8a14-9d8b924a
 
 `--pro` включает платную расширенную квоту и поэтому задаётся только явно. Команда status делает
 один read-only запрос и не организует скрытый polling. При SUCCESS Яндекс возвращает временную
-ссылку на CSV; Bamboo пока не угадывает схему этого файла и не импортирует его без проверки.
-Контракты перечислены в `docs/SOURCES.md`.
+ссылку на CSV. Формат отчёта документирован Яндексом: дата, хост, URL, запрос, регион, клики,
+показы, позиция. После скачивания импортируйте файл явно:
+
+```bash
+python bamboo.py analytics-yandex-import --file yandex-url-query.csv
+```
+
+Bamboo сохраняет региональные строки в отдельной таблице `yandex_enhanced`, а в общий слой
+метрик кладёт `source=yandex_enhanced, grain=page_query`: агрегат date×URL×query по всем уже
+импортированным регионам. Поэтому последовательный импорт файлов по разным регионам не теряет
+ранее загруженную детализацию. Контракты перечислены в `docs/SOURCES.md`.
 
 Частый обычный сбор накапливает собственную историю в SQLite. Отсутствующий показатель
 сохраняется NULL, а не нулём. В `pull-yandex.json` фиксируются границы и ограничения выгрузки.
@@ -90,17 +99,20 @@ email и тексты переписки покупателей. В URL/запр
 
 ## Отчёт и решения
 
-`analytics-report` теперь имеет четыре независимых блока:
+`analytics-report` имеет независимые слои:
 
 1. `pages` — итоговые URL;
-2. `queries` — Google page_query и Яндекс query;
-3. `cannibalization_candidates` — только там, где реально известны несколько URL для одного
-   query, сейчас это прежде всего GSC;
-4. `conversions` — product_clicks, leads, orders, revenue и cost отдельно от поисковых метрик.
+2. `queries` — Google page_query, обычный Яндекс query и точный `yandex_enhanced` page_query;
+3. `query_clusters` — детерминированная группировка по словарю предметной области и intent;
+4. `cannibalization_candidates` — несколько URL по одному точному query×page источнику;
+5. `intent_mismatch_candidates` — например транзакционный запрос на article/term;
+6. `conversions` — product_clicks, leads, orders, revenue и cost;
+7. `funnels` — только когда conversion.source и page/source совпадают явно.
 
-Для запросов добавляется `intent_hint`: branded / transactional / commercial_research /
-informational / unknown. Это **лексическая эвристика для triage**, не SERP-анализ и не основание
-автоматически менять страницу.
+Для запросов добавляются `intent_hint`, `cluster_hint` и найденные сущности словаря.
+Кластеризация детерминированная: сначала термины `docs/domain.json`, затем лексический fallback.
+Это **triage**, а не эмбеддинг/LLM и не SERP-кластеризация. Intent mismatch также является только
+кандидатом на ручную проверку фактической выдачи и назначения страницы.
 
 CTR рассматривается вместе с позицией и составом запросов. Низкий CTR сам по себе не является
 ошибкой. Рост кликов выводится только при сопоставимом покрытии периода. Страница с малой выборкой
