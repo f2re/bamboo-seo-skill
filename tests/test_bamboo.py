@@ -232,6 +232,21 @@ class CoreTests(Fixture):
         self.assertEqual(commerce['product_ids'],['bowl-01'])
         self.assertEqual(commerce['products'][0]['id'],'bowl-01')
 
+    def test_vk_export_contains_tracking_without_overwriting_existing_utm(self):
+        self.good('vk',photo=True)
+        product=read_json(self.root/'content/products/bowl-01.json')
+        product.update(product_url='https://example.org/p/1?ref=catalog',vk_product_id='vk-17')
+        write_json(self.root/'content/products/bowl-01.json',product)
+        result=p.export(self.root,'example')
+        vk=read_json(Path(result['path'])/'vk.json')
+        self.assertEqual(vk['catalog_items'],['vk-17'])
+        self.assertEqual(vk['recommended_cta_type'],'product')
+        suggested=vk['tracking']['urls'][0]['suggested_url']
+        self.assertIn('utm_source=vk',suggested)
+        self.assertIn('utm_campaign=example',suggested)
+        self.assertEqual(p.tracking_url('https://example.org/p?utm_source=custom','example'),
+                         'https://example.org/p?utm_source=custom')
+
     def test_escaping(self):
         text=p.page('<img onerror=x>','" onload="x',p.markdown('<b>unsafe</b>'))
         self.assertIn('&lt;img',text);self.assertNotIn('<b>unsafe',text)
