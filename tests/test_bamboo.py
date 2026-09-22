@@ -484,6 +484,19 @@ class AnalyticsTests(Fixture):
         self.assertEqual(row['current']['clicks'],3)
         self.assertAlmostEqual(row['current']['position'],(5*100+7*50)/150)
 
+    def test_yandex_enhanced_partial_region_import_keeps_previous_regions(self):
+        first=self.root/'y1.csv';second=self.root/'y2.csv'
+        header='Date,Host,URL,Query,Region,Clicks,Impressions,Ranking\n'
+        first.write_text(header+'2026-09-21,example.org,https://example.org/a,chawan,Moscow,2,100,5\n',encoding='utf-8')
+        second.write_text(header+'2026-09-21,example.org,https://example.org/a,chawan,SPb,1,50,7\n',encoding='utf-8')
+        a.import_yandex_enhanced_csv(self.root,first)
+        a.import_yandex_enhanced_csv(self.root,second)
+        out=a.report(self.root,'2026-09-21',1)
+        row=[x for x in out['queries'] if x['source']=='yandex_enhanced'][0]
+        self.assertEqual(row['current']['impressions'],150)
+        self.assertEqual(row['current']['clicks'],3)
+
+
     def test_query_clusters_intent_mismatch_and_funnel(self):
         self.good()
         self.change('brief.json',lambda d:d['seo'].update(
@@ -515,8 +528,12 @@ class AnalyticsTests(Fixture):
 class CommerceTests(Fixture):
     def test_graph_links_content_products_and_collections(self):
         self.good(photo=True)
+        cfg=config(self.root);cfg['site_url']='https://example.org';write_json(self.root/'bamboo.json',cfg)
         product=read_json(self.root/'content/products/bowl-01.json')
-        product.update(collection='chawan',product_url='https://example.org/products/bowl-01')
+        product.update(collection='chawan',name='Тестовый тяван',
+                       product_url='https://example.org/products/bowl-01',
+                       price=5000,currency='RUB',availability='InStock',
+                       photo_set=['https://example.org/media/bowl-01.jpg'])
         write_json(self.root/'content/products/bowl-01.json',product)
         write_json(self.root/'content/collections/chawan.json',{
             'schema_version':1,'id':'chawan','confirmed':True,'name':'Тяваны','type':'category',
@@ -529,6 +546,10 @@ class CommerceTests(Fixture):
         self.assertIn('chawan',graph['nodes']['collections'])
         self.assertTrue(any(x['relation']=='contains' for x in graph['edges']))
         self.assertEqual(graph['internal_link_suggestions'][0]['to_url'],'https://example.org/products/bowl-01')
+        candidate=graph['structured_data_candidates'][0]
+        self.assertTrue(candidate['same_site_purchase_page'])
+        self.assertTrue(candidate['merchant_listing_candidate'])
+        self.assertEqual(candidate['missing_required_fields'],[])
         self.assertTrue((self.root/'content/commerce-graph.json').exists())
 
 
