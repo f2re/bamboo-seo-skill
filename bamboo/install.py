@@ -98,7 +98,7 @@ def _install(source: Path, target: Path, systems: set[str], dry_run: bool = Fals
         raise BambooError("В репозитории адаптеры уже готовы. Укажите отдельный проект: --target ../bamboo-work")
     engine = ".bamboo/toolkit"
     files, blocks = adapters(source, systems, engine)
-    for folder in ("bamboo", "skills", "agents", "docs", "examples", "tools"):
+    for folder in ("bamboo", "skills", "agents", "docs", "examples", "evals", "tools"):
         for file in (source / folder).rglob("*"):
             if file.is_file() and not file.is_symlink() and "__pycache__" not in file.parts and file.suffix != ".pyc":
                 files[engine + "/" + str(file.relative_to(source)).replace("\\", "/")] = file.read_text(encoding="utf-8")
