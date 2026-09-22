@@ -48,6 +48,9 @@
         "matcha_use",
         "school",
         "origin"
+      ],
+      "patterns": [
+        "\\\\bчаш(?:а|и|у|е|ей|ей|ами|ах)\\\\s+для\\\\s+маття\\\\b"
       ]
     },
     {
@@ -97,6 +100,9 @@
         "health_benefit",
         "water_purification",
         "guaranteed_taste_improvement"
+      ],
+      "patterns": [
+        "\\\\bисинск(?:ая|ой|ую|ою|ие|их|им|ими)\\\\s+глин(?:а|ы|у|е|ой|ою|ами|ах)\\\\b"
       ]
     },
     {
@@ -180,6 +186,9 @@
         "from_appearance",
         "from_glaze_color",
         "from_firing_temperature_alone"
+      ],
+      "patterns": [
+        "\\\\bбезопасн(?:а|ая|о|ый|ые|ую|ой|ых)\\\\s+для\\\\s+пищи\\\\b"
       ]
     }
   ]
