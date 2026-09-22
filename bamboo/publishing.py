@@ -106,7 +106,9 @@ def export(root: Path, name: str) -> dict:
     report = validate(root, name)
     if not report["ok"]:
         raise BambooError("Сначала устраните ошибки validate; экспорт не выполнен")
-    pack = read_json(job_path(root, name) / "pack.json")
+    job = job_path(root, name)
+    pack = read_json(job / "pack.json")
+    brief = read_json(job / "brief.json")
     dest = safe(root, f"exports/{name}")
     dest.mkdir(parents=True, exist_ok=True)
     urls = []
@@ -119,11 +121,29 @@ def export(root: Path, name: str) -> dict:
         urls.append(rel)
     for fmt, item in pack["formats"].items():
         write_text(safe(dest, f"{fmt}.txt"), clean(item["text"]) + "\n\n" + clean(item["cta"]) + "\n")
-    write_json(dest / "photos.json", [{"file": url, "alt": p["alt"], "caption": p.get("caption", "")} for p, url in zip(pack["photos"], urls)])
+    photo_manifest = [{"file": url, "alt": p["alt"], "caption": p.get("caption", "")}
+                      for p, url in zip(pack["photos"], urls)]
+    write_json(dest / "photos.json", photo_manifest)
+    products = []
+    for product_id in brief.get("product_ids", []):
+        product = read_json(safe(root, f"content/products/{product_id}.json"))
+        products.append({k: product.get(k) for k in
+            ("id", "name", "type", "collection", "price", "currency", "availability",
+             "product_url", "vk_product_id", "one_of_a_kind")})
+    commerce = {"shop_url": config(root).get("shop_url"), "products": products,
+                "seo": brief.get("seo") or {}, "product_ids": brief.get("product_ids", [])}
+    write_json(dest / "commerce.json", commerce)
+    if "vk" in pack["formats"]:
+        vk = pack["formats"]["vk"]
+        write_json(dest / "vk.json", {"text": clean(vk["text"]), "cta": clean(vk["cta"]),
+                   "products": products, "photos": photo_manifest,
+                   "note": "Пакет для ручной/авторизованной публикации; API ВК не вызывался."})
     content = (body(root, name, urls) if "article" in pack["formats"] else
                "".join(f"<h2>{fmt}</h2>" + markdown(v["text"]) + markdown(v["cta"]) for fmt, v in pack["formats"].items()))
     write_text(dest / "preview.html", page(pack["title"], pack["description"], content))
-    write_json(dest / "manifest.json", {"slug": name, "content_hash": snapshot(root, name), "draft": True, "created_at": now()})
+    write_json(dest / "manifest.json", {"slug": name, "content_hash": snapshot(root, name), "draft": True,
+                                               "created_at": now(), "product_ids": brief.get("product_ids", []),
+                                               "shop_url": config(root).get("shop_url")})
     return {"path": str(dest), "preview": str(dest / "preview.html"), "published": False}
 
 
