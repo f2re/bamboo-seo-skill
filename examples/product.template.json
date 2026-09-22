@@ -4,6 +4,7 @@
   "confirmed": false,
   "name": null,
   "type": null,
+  "collection": null,
   "technique": null,
   "clay": null,
   "clay_origin": null,
@@ -15,12 +16,21 @@
   "currency": "RUB",
   "availability": null,
   "author": null,
+  "product_url": null,
+  "vk_product_id": null,
+  "one_of_a_kind": null,
+  "care": null,
+  "food_contact_status": null,
+  "photo_set": [],
+  "related_products": [],
+  "evidence": [],
   "allowed_claims": [],
   "unknown_fields": [
     "technique",
     "clay",
+    "clay_origin",
     "volume_ml",
     "price"
   ],
-  "note": "ШАБЛОН. Не реальный товар; заполнить и подтвердить у мастера."
+  "note": "ШАБЛОН. Не реальный товар; заполнить и подтвердить у мастера. null не заменять догадкой."
 }

@@ -45,7 +45,7 @@ def adapters(source: Path, systems: set[str], engine: str) -> tuple[dict[str, st
     files = {}
     prefix = engine.rstrip("/") + "/" if engine != "." else ""
     instruction = (f"{BEGIN}\n## Bamboo Pottery\n"
-        f"Для контента прочитайте `{prefix}docs/WORKFLOW.md` и `{prefix}docs/BRAND.md`. "
+        f"Для контента прочитайте `{prefix}docs/WORKFLOW.md`, `{prefix}docs/BRAND.md`, `{prefix}docs/DOMAIN.md` и `{prefix}docs/COMMERCE.md`. "
         "Работайте из корня проекта; CLI: `python bamboo.py --help`. Данные — в `bamboo.json` и `content/`.\n"
         "Не выдумывайте характеристики, происхождение, отзывы, опыт мастера, наличие и цены. "
         "Не публикуйте и не утверждайте от имени человека без его явного поручения на конкретную версию.\n"
@@ -98,7 +98,7 @@ def _install(source: Path, target: Path, systems: set[str], dry_run: bool = Fals
         raise BambooError("В репозитории адаптеры уже готовы. Укажите отдельный проект: --target ../bamboo-work")
     engine = ".bamboo/toolkit"
     files, blocks = adapters(source, systems, engine)
-    for folder in ("bamboo", "skills", "agents", "docs", "examples", "tools"):
+    for folder in ("bamboo", "skills", "agents", "docs", "examples", "evals", "tools"):
         for file in (source / folder).rglob("*"):
             if file.is_file() and not file.is_symlink() and "__pycache__" not in file.parts and file.suffix != ".pyc":
                 files[engine + "/" + str(file.relative_to(source)).replace("\\", "/")] = file.read_text(encoding="utf-8")

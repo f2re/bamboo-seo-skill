@@ -148,6 +148,16 @@ class CoreTests(Fixture):
         self.good();self.change('pack.json',lambda d:d['formats']['card'].update(cta=''))
         self.assertFalse(q.validate(self.root,'example')['ok'])
 
+    def test_optional_seo_context_validation(self):
+        self.good()
+        self.change('brief.json',lambda d:d['seo'].update(page_type='bad-type'))
+        self.assertFalse(q.validate(self.root,'example')['ok'])
+        self.change('brief.json',lambda d:d['seo'].update(page_type='article',target_url='javascript:bad'))
+        self.assertFalse(q.validate(self.root,'example')['ok'])
+        self.change('brief.json',lambda d:d['seo'].update(target_url='https://example.org/journal/example/'))
+        self.assertTrue(q.validate(self.root,'example')['ok'])
+
+
     def test_photo_required(self):
         self.good(photo=True);self.change('pack.json',lambda d:d.update(photos=[]))
         self.assertFalse(q.validate(self.root,'example')['ok'])
@@ -159,6 +169,13 @@ class CoreTests(Fixture):
     def test_photo_modified_fails(self):
         self.good(photo=True);(self.root/'content/media/test.png').write_bytes(b'changed')
         self.assertFalse(q.validate(self.root,'example')['ok'])
+
+    def test_product_commerce_url_is_validated(self):
+        self.good(photo=True)
+        write_json(self.root/'content/products/bowl-01.json',
+                   {'id':'bowl-01','confirmed':True,'volume_ml':200,'product_url':'javascript:alert(1)'})
+        self.assertFalse(q.validate(self.root,'example')['ok'])
+
 
     def test_review_template_not_approval(self):
         self.good();q.review_template(self.root,'example')
@@ -196,6 +213,9 @@ class CoreTests(Fixture):
         self.assertNotIn('[[fact]]',text)
         self.assertFalse(result['published'])
         self.assertEqual((Path(result['path'])/'media'/f'{digest(PNG)}.png').read_bytes(),PNG)
+        commerce=read_json(Path(result['path'])/'commerce.json')
+        self.assertEqual(commerce['product_ids'],['bowl-01'])
+        self.assertEqual(commerce['products'][0]['id'],'bowl-01')
 
     def test_escaping(self):
         text=p.page('<img onerror=x>','" onload="x',p.markdown('<b>unsafe</b>'))
@@ -213,6 +233,9 @@ class CoreTests(Fixture):
         self.assertEqual(result['status'],'built_locally')
         text=(self.root/'site/journal/example/index.html').read_text()
         self.assertIn('rel="canonical"',text);self.assertNotIn('noindex',text)
+        self.assertIn('property="og:type" content="article"',text)
+        self.assertIn('"@type":"Article"',text)
+        self.assertIn('"@type":"BreadcrumbList"',text)
         self.assertTrue((self.root/'site/sitemap.xml').exists())
 
     def test_cli_validate_and_dry_run(self):
@@ -352,6 +375,83 @@ class AnalyticsTests(Fixture):
             rows=a.yandex_rows('u','h','secret','2026-09-20','2026-09-21')
         self.assertEqual(len(rows),1);self.assertEqual(rows[0]['query'],'')
         self.assertEqual(rows[0]['clicks'],10);self.assertIsNone(rows[0]['impressions'])
+
+    def test_yandex_query_is_separate_grain(self):
+        item={'text_indicator':{'type':'QUERY','value':'купить тяван'},
+              'popular_complementary_indicator':{'type':'URL','value':'https://example.org/chawan/'},
+              'statistics':[{'date':'2026-09-21','field':'CLICKS','value':3},
+                            {'date':'2026-09-21','field':'IMPRESSIONS','value':90},
+                            {'date':'2026-09-21','field':'POSITION','value':6}]}
+        with patch('bamboo.analytics.request',return_value={'count':1,'text_indicator_to_statistics':[item]}) as req:
+            rows=a.yandex_rows('u','h','secret','2026-09-20','2026-09-21','QUERY')
+        self.assertEqual(rows[0]['grain'],'query')
+        self.assertEqual(rows[0]['query'],'купить тяван')
+        self.assertEqual(rows[0]['page'],'https://example.org/chawan/')
+        self.assertEqual(req.call_args.kwargs['payload']['text_indicator'],'QUERY')
+        self.assertEqual(a.normalize(rows[0])['grain'],'query')
+
+    def test_report_uses_queries_and_flags_multi_url_candidate(self):
+        rows=[
+            self.row(impressions=300,clicks=15),
+            self.row(source='google',grain='page_query',query='как выбрать тяван',
+                     page='https://example.org/a',impressions=120,clicks=2,position=8),
+            self.row(source='google',grain='page_query',query='как выбрать тяван',
+                     page='https://example.org/b',impressions=110,clicks=1,position=9),
+            self.row(source='yandex',grain='query',query='купить тяван',
+                     page='https://example.org/catalog/chawan',impressions=140,clicks=5,position=7),
+        ]
+        a.ingest(self.root,rows)
+        out=a.report(self.root,'2026-09-21',1)
+        self.assertEqual(out['query_count_total'],3)
+        self.assertEqual(out['queries'][0]['intent_hint'] in
+                         ('informational','transactional','commercial_research','unknown','branded'),True)
+        yandex=[x for x in out['queries'] if x['source']=='yandex'][0]
+        self.assertIsNone(yandex['page'])
+        self.assertEqual(yandex['page_hint'],'https://example.org/catalog/chawan')
+        self.assertEqual(len(out['cannibalization_candidates']),1)
+        self.assertEqual(len(out['cannibalization_candidates'][0]['pages']),2)
+
+    def test_conversion_rows_are_reported_separately(self):
+        a.ingest(self.root,[self.row(source='manual',grain='conversion',query='',
+            impressions=None,clicks=None,product_clicks=20,leads=5,orders=2,revenue=10000,cost=1000)])
+        out=a.report(self.root,'2026-09-21',1)
+        self.assertEqual(out['pages'],[])
+        self.assertEqual(out['conversions'][0]['current']['orders'],2)
+        self.assertEqual(out['conversions'][0]['current']['lead_to_order_rate'],0.4)
+
+    def test_query_intent_hint(self):
+        self.assertEqual(a.query_intent_hint('купить тяван ручной работы'),'transactional')
+        self.assertEqual(a.query_intent_hint('как выбрать тяван'),'commercial_research')
+        self.assertEqual(a.query_intent_hint('Bamboo Pottery'),'branded')
+
+    def test_yandex_enhanced_export_is_explicit_and_quota_aware(self):
+        cfg=config(self.root);cfg['analytics'].update(yandex_user_id='7',yandex_host_id='host-id');write_json(self.root/'bamboo.json',cfg)
+        task='2f1c5d3b-7d9b-4c3e-8a14-9d8b924a12ef'
+        response={'task_id':task,'free_quota_used':2,'pro_quota_used':0,'total_quota_used':2,
+                  'free_quota_remaining':98,'pro_quota_remaining':0}
+        with patch.dict(os.environ,{'BAMBOO_YANDEX_TOKEN':'SECRET'},clear=True):
+            with patch('bamboo.analytics.request',return_value=response) as req:
+                result=a.yandex_export_start(self.root,['2026-09-20'],['/journal/a','/catalog'],[],False)
+        self.assertEqual(result['task_id'],task)
+        self.assertEqual(req.call_args.kwargs['payload']['use_pro_tariff'],'false')
+        self.assertEqual(req.call_args.kwargs['payload']['paths'],['/journal/a','/catalog'])
+        self.assertNotIn('readonly',req.call_args.kwargs)
+        self.assertTrue((self.root/f'analytics/yandex-export-{task}.json').exists())
+
+    def test_yandex_enhanced_export_status_does_not_poll(self):
+        cfg=config(self.root);cfg['analytics'].update(yandex_user_id='7',yandex_host_id='host-id');write_json(self.root/'bamboo.json',cfg)
+        task='2f1c5d3b-7d9b-4c3e-8a14-9d8b924a12ef'
+        with patch.dict(os.environ,{'BAMBOO_YANDEX_TOKEN':'SECRET'},clear=True):
+            with patch('bamboo.analytics.request',return_value={'download_status':'SUCCESS','url':'https://storage.example/report.csv'}) as req:
+                result=a.yandex_export_status(self.root,task)
+        self.assertEqual(result['download_status'],'SUCCESS')
+        self.assertTrue(req.call_args.kwargs['readonly'])
+        self.assertEqual(req.call_count,1)
+
+    def test_yandex_export_rejects_absolute_url_path(self):
+        cfg=config(self.root);cfg['analytics'].update(yandex_user_id='7',yandex_host_id='host-id');write_json(self.root/'bamboo.json',cfg)
+        with self.assertRaises(BambooError):
+            a.yandex_export_start(self.root,['2026-09-20'],['https://example.org/a'])
 
     def test_oauth_form_and_secrets_not_in_url(self):
         with patch.dict(os.environ,{'BAMBOO_GSC_CLIENT_ID':'client','BAMBOO_GSC_CLIENT_SECRET':'SECRET','BAMBOO_GSC_REFRESH_TOKEN':'REFRESH'},clear=True):

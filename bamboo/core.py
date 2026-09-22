@@ -173,6 +173,7 @@ def new_job(root: Path, name: str, topic: str, formats: list[str],
         write_json(target / "brief.json", {
             "schema_version": 1, "slug": name, "topic": topic, "audience": audience,
             "formats": formats, "product_ids": products, "intent": "",
+            "seo": {"page_type": None, "cluster": None, "target_url": None, "related_urls": []},
             "master_notes": "", "master_notes_public": False,
             "demand": {"status": "unknown", "evidence": []}, "created_at": now()})
         write_json(target / "sources.json", [])

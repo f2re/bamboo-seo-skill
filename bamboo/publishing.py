@@ -75,12 +75,26 @@ def body(root: Path, name: str, photo_urls: list[str] | None = None) -> str:
     return text
 
 
+def structured_json(items: list[dict] | None) -> str:
+    if not items:
+        return ""
+    payload = json.dumps(items if len(items) > 1 else items[0], ensure_ascii=False, separators=(",", ":"))
+    payload = payload.replace("<", "\\u003c")
+    return '<script type="application/ld+json">' + payload + '</script>'
+
+
 def page(title: str, description: str, content: str, canonical: str | None = None,
-         draft: bool = True) -> str:
+         draft: bool = True, structured: list[dict] | None = None,
+         og_type: str = "website") -> str:
     esc = html.escape
     head = '<meta name="robots" content="noindex,nofollow">' if draft else ""
+    head += (f'<meta property="og:title" content="{esc(title, quote=True)}">'
+             f'<meta property="og:description" content="{esc(description, quote=True)}">'
+             f'<meta property="og:type" content="{esc(og_type, quote=True)}">')
     if canonical:
-        head += f'<link rel="canonical" href="{esc(canonical, quote=True)}">'
+        head += (f'<link rel="canonical" href="{esc(canonical, quote=True)}">'
+                 f'<meta property="og:url" content="{esc(canonical, quote=True)}">')
+    head += structured_json(structured)
     return (f'<!doctype html>\n<html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
             f'<title>{esc(title)}</title><meta name="description" content="{esc(description, quote=True)}">{head}'
             '<style>body{font:18px/1.65 system-ui,sans-serif;max-width:800px;margin:3rem auto;padding:0 1rem}'
@@ -92,7 +106,9 @@ def export(root: Path, name: str) -> dict:
     report = validate(root, name)
     if not report["ok"]:
         raise BambooError("Сначала устраните ошибки validate; экспорт не выполнен")
-    pack = read_json(job_path(root, name) / "pack.json")
+    job = job_path(root, name)
+    pack = read_json(job / "pack.json")
+    brief = read_json(job / "brief.json")
     dest = safe(root, f"exports/{name}")
     dest.mkdir(parents=True, exist_ok=True)
     urls = []
@@ -105,11 +121,29 @@ def export(root: Path, name: str) -> dict:
         urls.append(rel)
     for fmt, item in pack["formats"].items():
         write_text(safe(dest, f"{fmt}.txt"), clean(item["text"]) + "\n\n" + clean(item["cta"]) + "\n")
-    write_json(dest / "photos.json", [{"file": url, "alt": p["alt"], "caption": p.get("caption", "")} for p, url in zip(pack["photos"], urls)])
+    photo_manifest = [{"file": url, "alt": p["alt"], "caption": p.get("caption", "")}
+                      for p, url in zip(pack["photos"], urls)]
+    write_json(dest / "photos.json", photo_manifest)
+    products = []
+    for product_id in brief.get("product_ids", []):
+        product = read_json(safe(root, f"content/products/{product_id}.json"))
+        products.append({k: product.get(k) for k in
+            ("id", "name", "type", "collection", "price", "currency", "availability",
+             "product_url", "vk_product_id", "one_of_a_kind")})
+    commerce = {"shop_url": config(root).get("shop_url"), "products": products,
+                "seo": brief.get("seo") or {}, "product_ids": brief.get("product_ids", [])}
+    write_json(dest / "commerce.json", commerce)
+    if "vk" in pack["formats"]:
+        vk = pack["formats"]["vk"]
+        write_json(dest / "vk.json", {"text": clean(vk["text"]), "cta": clean(vk["cta"]),
+                   "products": products, "photos": photo_manifest,
+                   "note": "Пакет для ручной/авторизованной публикации; API ВК не вызывался."})
     content = (body(root, name, urls) if "article" in pack["formats"] else
                "".join(f"<h2>{fmt}</h2>" + markdown(v["text"]) + markdown(v["cta"]) for fmt, v in pack["formats"].items()))
     write_text(dest / "preview.html", page(pack["title"], pack["description"], content))
-    write_json(dest / "manifest.json", {"slug": name, "content_hash": snapshot(root, name), "draft": True, "created_at": now()})
+    write_json(dest / "manifest.json", {"slug": name, "content_hash": snapshot(root, name), "draft": True,
+                                               "created_at": now(), "product_ids": brief.get("product_ids", []),
+                                               "shop_url": config(root).get("shop_url")})
     return {"path": str(dest), "preview": str(dest / "preview.html"), "published": False}
 
 
@@ -127,8 +161,21 @@ def publish_static(root: Path, name: str) -> dict:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(safe(src, photo["file"]), target)
     canonical = base + f"/journal/{name}/"
+    image_urls = [canonical + p["file"] for p in photos]
+    structured = [
+        {"@context": "https://schema.org", "@type": "Article",
+         "headline": pack["title"], "description": pack["description"], "inLanguage": "ru",
+         "mainEntityOfPage": canonical, "publisher": {"@type": "Organization", "name": config(root)["brand"]},
+         **({"image": image_urls} if image_urls else {})},
+        {"@context": "https://schema.org", "@type": "BreadcrumbList",
+         "itemListElement": [
+             {"@type": "ListItem", "position": 1, "name": "Журнал", "item": base + "/"},
+             {"@type": "ListItem", "position": 2, "name": pack["title"], "item": canonical}
+         ]}
+    ]
     write_text(dest / "index.html", page(pack["title"], pack["description"],
-                                       body(root, name, [p["file"] for p in photos]), canonical, draft=False))
+                                       body(root, name, [p["file"] for p in photos]), canonical,
+                                       draft=False, structured=structured, og_type="article"))
     registry_path = safe(root, "site/registry.json")
     registry = read_json(registry_path) if registry_path.exists() else {}
     registry[name] = {"title": pack["title"], "url": canonical, "updated_at": now(), "content_hash": snapshot(root, name)}

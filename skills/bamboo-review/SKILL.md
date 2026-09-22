@@ -1,11 +1,11 @@
 ---
 name: bamboo-review
-description: Проверка фактов, голоса, фотографий, кликбейта и поискового намерения Bamboo
+description: Аудитирует готовый материал Bamboo Pottery по фактам, голосу, кликбейту, фото, SEO-intent и культурной точности. Не использовать для первичного написания или публикации.
 ---
 
 # bamboo-review
 
-Вход: slug и готовые brief/sources/claims/pack. Прочитайте docs/WORKFLOW.md.
+Вход: slug и готовые brief/sources/claims/pack. Прочитайте docs/WORKFLOW.md, docs/DOMAIN.md и docs/COMMERCE.md.
 Координатор запускает python bamboo.py validate SLUG. Ошибки обязательны к исправлению;
 предупреждения требуют содержательного решения, не автоматического подавления.
 

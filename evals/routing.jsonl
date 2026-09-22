@@ -1,0 +1,12 @@
+{"id":"route-plan-01","prompt":"Предложи 5 тем для статей Bamboo Pottery на следующий месяц","expected_skill":"bamboo-plan","forbidden_skills":["bamboo-publish"]}
+{"id":"route-plan-02","prompt":"Есть статьи про тяваны и Куринуки. Найди, какие темы дублируют намерение","expected_skill":"bamboo-plan","forbidden_skills":["bamboo-content"]}
+{"id":"route-research-01","prompt":"Проверь, можно ли утверждать, что эта глина из Исина","expected_skill":"bamboo-research","forbidden_skills":["bamboo-publish"]}
+{"id":"route-research-02","prompt":"Найди надёжные источники для исторической справки о Куринуки","expected_skill":"bamboo-research","forbidden_skills":["bamboo-content"]}
+{"id":"route-content-01","prompt":"Напиши карточку товара для подтверждённого тявана bowl-17","expected_skill":"bamboo-content","forbidden_skills":["bamboo-plan"]}
+{"id":"route-content-02","prompt":"Адаптируй готовую статью в пост ВК и три сторис","expected_skill":"bamboo-content","forbidden_skills":["bamboo-publish"]}
+{"id":"route-review-01","prompt":"Проверь этот готовый текст на кликбейт, голос мастера и фактические ошибки","expected_skill":"bamboo-review","forbidden_skills":["bamboo-content"]}
+{"id":"route-review-02","prompt":"Сделай независимый аудит карточки перед публикацией","expected_skill":"bamboo-review","forbidden_skills":["bamboo-publish"]}
+{"id":"route-publish-01","prompt":"После моего утверждения создай черновик этой статьи в WordPress","expected_skill":"bamboo-publish","forbidden_skills":["bamboo-content"]}
+{"id":"route-publish-02","prompt":"Собери локальный статический сайт из уже утверждённого материала","expected_skill":"bamboo-publish","forbidden_skills":[]}
+{"id":"route-analytics-01","prompt":"Разбери запросы Google Search Console и предложи одну проверяемую гипотезу","expected_skill":"bamboo-analytics","forbidden_skills":["bamboo-content"]}
+{"id":"route-analytics-02","prompt":"Что изменилось по запросам и URL в Яндекс Вебмастере за две недели?","expected_skill":"bamboo-analytics","forbidden_skills":["bamboo-publish"]}

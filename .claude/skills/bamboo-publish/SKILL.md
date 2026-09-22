@@ -1,6 +1,6 @@
 ---
 name: bamboo-publish
-description: Явный экспорт или публикация утверждённого материала Bamboo Pottery
+description: Экспортирует или публикует только утверждённый материал Bamboo Pottery по явному поручению пользователя на конкретный канал.
 disable-model-invocation: true
 ---
 

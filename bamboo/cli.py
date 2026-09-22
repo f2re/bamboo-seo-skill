@@ -51,6 +51,14 @@ def parser() -> argparse.ArgumentParser:
     a = sub.add_parser("analytics-report")
     a.add_argument("--end", default=date.today().isoformat())
     a.add_argument("--days", type=int, default=7)
+    sub.add_parser("analytics-yandex-export-dates", help="Показать доступные даты расширенной Яндекс URL×query выгрузки")
+    a = sub.add_parser("analytics-yandex-export-start", help="Явно запустить квотируемую расширенную Яндекс URL×query выгрузку")
+    a.add_argument("--date", action="append", required=True, dest="dates")
+    a.add_argument("--path", action="append", required=True, dest="paths")
+    a.add_argument("--region-id", action="append", type=int, default=[], dest="region_ids")
+    a.add_argument("--pro", action="store_true", help="Использовать расширенную платную квоту")
+    a = sub.add_parser("analytics-yandex-export-status", help="Проверить статус ранее запущенной Яндекс выгрузки")
+    a.add_argument("task_id")
     a = sub.add_parser("install", help="Установить в отдельный проект; чужие файлы сохраняются")
     a.add_argument("--target", required=True, type=Path)
     a.add_argument("--systems", default="all")
@@ -130,6 +138,12 @@ def dispatch(a: argparse.Namespace) -> dict:
             return analytics.pull(root, a.provider, a.start, a.end)
         if cmd == "analytics-report":
             return analytics.report(root, a.end, a.days)
+        if cmd == "analytics-yandex-export-dates":
+            return analytics.yandex_export_dates(root)
+        if cmd == "analytics-yandex-export-start":
+            return analytics.yandex_export_start(root, a.dates, a.paths, a.region_ids, a.pro)
+        if cmd == "analytics-yandex-export-status":
+            return analytics.yandex_export_status(root, a.task_id)
     raise BambooError("Неизвестная команда")
 
 

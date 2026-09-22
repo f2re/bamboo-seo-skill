@@ -88,7 +88,9 @@ python bamboo.py review-template first-bowl
 python bamboo.py status first-bowl
 ```
 
-`export` создаёт `exports/first-bowl/preview.html`, тексты форматов и копии реальных фотографий.
+`export` создаёт `exports/first-bowl/preview.html`, тексты форматов и копии реальных фотографий,
+а также `commerce.json` с безопасной выборкой товарных ссылок/ID. Для формата ВК дополнительно
+создаётся `vk.json` с текстом, CTA, порядком фото и связанными товарами. API ВК не вызывается.
 В превью установлен `noindex,nofollow`. Оно локальное; публичного действия нет.
 
 Человек проверяет превью и `review.json`: указывает своё имя, комментарии, отмечает
@@ -135,14 +137,19 @@ python bamboo.py analytics-import --file your-metrics.csv
 python bamboo.py analytics-pull --provider google --start 2026-09-01 --end 2026-09-14
 python bamboo.py analytics-pull --provider yandex --start 2026-09-08 --end 2026-09-21
 python bamboo.py analytics-report --end 2026-09-14 --days 7
+# Опционально: квотируемая расширенная Яндекс URL×query выгрузка
+python bamboo.py analytics-yandex-export-dates
+python bamboo.py analytics-yandex-export-start --date 2026-09-20 --path /journal/chawan/
+python bamboo.py analytics-yandex-export-status <task-uuid>
 ```
 
 Даты — примеры синтаксиса, замените на нужный доступный период.
-Google: Search Console page и page_query, с пагинацией.
-Яндекс: статистика URL за доступные API последние две недели; «популярный запрос» не выдаётся
-за полноценную разбивку запрос × страница. CSV допускает подтверждённые переходы, обращения
-и продажи с явной детализацией `conversion`. Повторный импорт обновляет строки, не удваивает их.
-Недостающие значения не становятся нулями. Поисковые клики не объявляются продажами.
+Google: Search Console `page` и точный `page_query`, с пагинацией.
+Яндекс: Query Analytics отдельно по URL и QUERY за доступные последние две недели. Для QUERY
+связанный URL хранится только как `page_hint`: это не полная разбивка запрос × страница.
+Отчёт теперь показывает запросы, intent-hints, кандидатов на несколько URL и отдельный conversion-блок.
+CSV допускает подтверждённые переходы к товару, обращения, заказы, выручку и затраты с grain=`conversion`.
+Повторный импорт обновляет строки, не удваивает их; пропуски не становятся нулями.
 Отчёт предлагает изменения, но **не переписывает стратегию, статьи и правила автоматически**.
 Настройка доступа и ограничения: [аналитика](docs/ANALYTICS.md).
 
@@ -158,7 +165,8 @@ agents/                            5 канонических ролей
 .agents/agents/ и .agents/rules/    Antigravity 2.0 / CLI
 bamboo/                            Python CLI, проверки, публикация, аналитика
 examples/                          шаблоны, не фактический каталог и не реальные метрики
-docs/                              процесс, стратегия, безопасность, интеграции
+docs/                              процесс, словарь предметной области, commerce-модель, аналитика
+evals/                             поведенческие кейсы маршрутизации и редакционных ограничений
 tests/                             проверки без внешних сервисов
 ```
 
@@ -167,6 +175,7 @@ tests/                             проверки без внешних сер
 ```bash
 python tools/sync_adapters.py
 python tools/sync_adapters.py --check
+python tools/check_evals.py
 python -m unittest discover -s tests -v
 ```
 
@@ -175,6 +184,8 @@ CI проверяет Python 3.10–3.13 на Linux, а также 3.12 на Win
 Нативный запуск внутри всех трёх ИИ, OAuth на ваших ресурсах и публикацию на вашем сайте
 нужно проверить в соответствующей среде; наличие файлов не доказывает успешный запуск сервиса.
 
-[Процесс и схемы данных](docs/WORKFLOW.md) · [Интеграции ИИ](docs/INTEGRATIONS.md) ·
-[Стратегия на 90 дней](docs/STRATEGY.md) · [Безопасность](docs/SECURITY.md) ·
-[Официальные источники](docs/SOURCES.md) · [Происхождение и лицензия](NOTICE.md)
+[Процесс и схемы данных](docs/WORKFLOW.md) · [Словарь предметной области](docs/DOMAIN.md) ·
+[Коммерческая SEO-модель](docs/COMMERCE.md) · [Интеграции ИИ](docs/INTEGRATIONS.md) ·
+[Поведенческие evals](docs/EVALS.md) · [Стратегия на 90 дней](docs/STRATEGY.md) ·
+[Безопасность](docs/SECURITY.md) · [Официальные источники](docs/SOURCES.md) ·
+[Происхождение и лицензия](NOTICE.md)
