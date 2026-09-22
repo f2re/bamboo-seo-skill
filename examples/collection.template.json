@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "chawan",
+  "confirmed": false,
+  "name": "Тяваны",
+  "type": "category",
+  "cluster": "chawan",
+  "url": null,
+  "product_ids": [],
+  "intro_claim_ids": [],
+  "related_articles": [],
+  "related_collections": [],
+  "primary_intent": null,
+  "cta": null,
+  "note": "ШАБЛОН категории. В product_ids включать только реальные подтверждённые изделия."
+}
