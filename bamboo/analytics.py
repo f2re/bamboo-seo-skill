@@ -90,7 +90,7 @@ def ingest(root: Path, rows: list[dict]) -> dict:
     normalized = [normalize(r) for r in rows]
     keys = [tuple(r[k] for k in FIELDS[:5]) for r in normalized]
     if len(keys) != len(set(keys)):
-        raise BambooError("В одной выгрузке повторяется ключ date/source/grain,page,query")
+        raise BambooError("В одной выгрузке повторяется ключ date/source/grain/page/query")
     db = connect(root)
     try:
         with db:
@@ -117,9 +117,11 @@ def _header_key(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().casefold())
 
 
-def _float_csv(value: str, field: str) -> float:
+def _float_csv(value: str, field: str, *, allow_blank: bool = False) -> float | None:
+    if allow_blank and (value is None or not str(value).strip()):
+        return None
     try:
-        result = float(value.strip().replace(" ", "").replace(",", "."))
+        result = float(str(value).strip().replace(" ", "").replace(",", "."))
     except (ValueError, AttributeError) as exc:
         raise BambooError(f"Яндекс CSV: поле {field} должно быть числом") from exc
     if not math.isfinite(result) or result < 0:
@@ -154,13 +156,13 @@ def import_yandex_enhanced_csv(root: Path, path: Path) -> dict:
             page = str(row[mapping["page"]]).strip()
             query = str(row[mapping["query"]]).strip()
             region = str(row[mapping["region"]]).strip()
-            if not host or not query or not region:
-                raise BambooError(f"Яндекс CSV:{number}: пустой хост, запрос или регион")
+            if not host or not query:
+                raise BambooError(f"Яндекс CSV:{number}: пустой хост или запрос")
             http_url(page)
             raw.append({"date": day, "host": host, "page": page, "query": query, "region": region,
                         "clicks": _float_csv(row[mapping["clicks"]], "clicks"),
                         "impressions": _float_csv(row[mapping["impressions"]], "impressions"),
-                        "position": _float_csv(row[mapping["position"]], "position")})
+                        "position": _float_csv(row[mapping["position"]], "position", allow_blank=True)})
 
     keys = [(r["date"], r["host"], r["page"], r["query"], r["region"]) for r in raw]
     if len(keys) != len(set(keys)):
@@ -190,9 +192,10 @@ def import_yandex_enhanced_csv(root: Path, path: Path) -> dict:
     for (day, page, query), items in grouped.items():
         impressions = sum(x["impressions"] for x in items)
         clicks = sum(x["clicks"] for x in items)
-        weighted = [x for x in items if x["impressions"] > 0]
+        weighted = [x for x in items if x["position"] is not None and x["impressions"] > 0]
+        known_positions = [x["position"] for x in items if x["position"] is not None]
         position = (sum(x["position"] * x["impressions"] for x in weighted) / sum(x["impressions"] for x in weighted)
-                    if weighted else sum(x["position"] for x in items) / len(items))
+                    if weighted else (sum(known_positions) / len(known_positions) if known_positions else None))
         metrics.append(normalize({"date": day, "source": "yandex_enhanced", "grain": "page_query",
                                   "page": page, "query": query, "impressions": impressions,
                                   "clicks": clicks, "position": position}))
