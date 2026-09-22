@@ -15,7 +15,10 @@
 - Antigravity custom subagents: https://antigravity.google/docs/subagents?tab=cli
 - Search Console query: https://developers.google.com/webmaster-tools/v1/searchanalytics/query
 - OAuth refresh: https://developers.google.com/identity/protocols/oauth2/web-server#offline
-- Яндекс URL-аналитика: https://yandex.ru/dev/webmaster/doc/ru/reference/host-query-analytics
+- Яндекс Query Analytics (URL и QUERY): https://yandex.ru/dev/webmaster/doc/ru/reference/host-query-analytics
+- Яндекс расширенная выгрузка URL×query (β): https://yandex.ru/dev/webmaster/doc/ru/reference/enhanced-export
+- Яндекс запуск расширенной выгрузки: https://yandex.ru/dev/webmaster/doc/ru/reference/initialization-export
+- Яндекс статус расширенной выгрузки: https://yandex.ru/dev/webmaster/doc/ru/reference/status-retrieval
 - Яндекс user id: https://yandex.ru/dev/webmaster/doc/ru/reference/user
 - WordPress posts: https://developer.wordpress.org/rest-api/reference/posts/
 - WordPress media: https://developer.wordpress.org/rest-api/reference/media/
