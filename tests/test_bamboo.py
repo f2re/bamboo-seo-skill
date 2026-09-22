@@ -14,7 +14,7 @@ import urllib.error
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from bamboo import analytics as a, publishing as p, quality as q
+from bamboo import analytics as a, commerce as cm, publishing as p, quality as q
 from bamboo.cli import main
 from bamboo.core import (BambooError, CHECKS, approval_token, config, digest, file_digest, init,
                          job_path, lock, new_job, read_json, safe, snapshot, write_json, write_text)
@@ -147,6 +147,21 @@ class CoreTests(Fixture):
     def test_cta_required(self):
         self.good();self.change('pack.json',lambda d:d['formats']['card'].update(cta=''))
         self.assertFalse(q.validate(self.root,'example')['ok'])
+
+    def test_evidence_sensitive_domain_term_requires_matching_claim(self):
+        self.good()
+        self.change('pack.json',lambda d:d['formats']['card'].update(
+            text='Эта исинская глина вылеплена вручную. [[fact]]'))
+        self.assertFalse(q.validate(self.root,'example')['ok'])
+        self.change('claims.json',lambda d:d[0].update(text='Подтверждено: исинская глина. Объём 200 мл.'))
+        self.assertTrue(q.validate(self.root,'example')['ok'])
+
+    def test_affirmative_health_claim_is_error_but_refutation_is_warning(self):
+        affirmative=q.lint('Эта глина очищает воду.')
+        refutation=q.lint('Нет доказательств, что эта глина очищает воду.')
+        self.assertTrue(any(x['code']=='health_claim' and x['level']=='error' for x in affirmative))
+        self.assertTrue(any(x['code']=='health_claim' and x['level']=='warning' for x in refutation))
+
 
     def test_optional_seo_context_validation(self):
         self.good()
@@ -453,6 +468,41 @@ class AnalyticsTests(Fixture):
         with self.assertRaises(BambooError):
             a.yandex_export_start(self.root,['2026-09-20'],['https://example.org/a'])
 
+    def test_yandex_enhanced_csv_imports_exact_page_query_and_raw_regions(self):
+        path=self.root/'yandex.csv'
+        path.write_text(
+            'Дата;Хост;URL;Запрос;Регион;Клики;Показы;Позиция\n'
+            '2026-09-21;example.org;https://example.org/a;тяван;Москва;2;100;5\n'
+            '2026-09-21;example.org;https://example.org/a;тяван;СПб;1;50;7\n',
+            encoding='utf-8')
+        result=a.import_yandex_enhanced_csv(self.root,path)
+        self.assertEqual(result['raw_rows'],2)
+        self.assertEqual(result['page_query_rows'],1)
+        out=a.report(self.root,'2026-09-21',1)
+        row=[x for x in out['queries'] if x['source']=='yandex_enhanced'][0]
+        self.assertEqual(row['current']['impressions'],150)
+        self.assertEqual(row['current']['clicks'],3)
+        self.assertAlmostEqual(row['current']['position'],(5*100+7*50)/150)
+
+    def test_query_clusters_intent_mismatch_and_funnel(self):
+        self.good()
+        self.change('brief.json',lambda d:d['seo'].update(
+            page_type='article',cluster='chawan',target_url='https://example.org/a'))
+        a.ingest(self.root,[
+            self.row(source='google',grain='page',page='https://example.org/a',
+                     impressions=300,clicks=30,position=5),
+            self.row(source='google',grain='page_query',page='https://example.org/a',
+                     query='купить тяван',impressions=150,clicks=10,position=4),
+            self.row(source='google',grain='conversion',page='https://example.org/a',query='',
+                     impressions=None,clicks=None,position=None,product_clicks=12,leads=4,orders=2)
+        ])
+        out=a.report(self.root,'2026-09-21',1)
+        self.assertEqual(out['query_clusters'][0]['cluster_hint'],'chawan')
+        self.assertEqual(out['intent_mismatch_candidates'][0]['page_type'],'article')
+        self.assertEqual(out['funnels'][0]['product_click_rate'],12/30)
+        self.assertEqual(out['funnels'][0]['order_rate'],2/30)
+
+
     def test_oauth_form_and_secrets_not_in_url(self):
         with patch.dict(os.environ,{'BAMBOO_GSC_CLIENT_ID':'client','BAMBOO_GSC_CLIENT_SECRET':'SECRET','BAMBOO_GSC_REFRESH_TOKEN':'REFRESH'},clear=True):
             with patch('bamboo.analytics.request',return_value={'access_token':'result'}) as req:
@@ -460,6 +510,26 @@ class AnalyticsTests(Fixture):
         self.assertIsInstance(req.call_args.kwargs['payload'],bytes)
         self.assertEqual(req.call_args.kwargs['headers']['Content-Type'],'application/x-www-form-urlencoded')
         self.assertNotIn('SECRET',req.call_args.args[0])
+
+
+class CommerceTests(Fixture):
+    def test_graph_links_content_products_and_collections(self):
+        self.good(photo=True)
+        product=read_json(self.root/'content/products/bowl-01.json')
+        product.update(collection='chawan',product_url='https://example.org/products/bowl-01')
+        write_json(self.root/'content/products/bowl-01.json',product)
+        write_json(self.root/'content/collections/chawan.json',{
+            'schema_version':1,'id':'chawan','confirmed':True,'name':'Тяваны','type':'category',
+            'cluster':'chawan','url':'https://example.org/catalog/chawan','product_ids':['bowl-01']})
+        brief=read_json(self.job/'brief.json')
+        brief['seo'].update(page_type='article',cluster='chawan',target_url='https://example.org/journal/choose-chawan')
+        write_json(self.job/'brief.json',brief)
+        graph=cm.build_graph(self.root)
+        self.assertIn('bowl-01',graph['nodes']['products'])
+        self.assertIn('chawan',graph['nodes']['collections'])
+        self.assertTrue(any(x['relation']=='contains' for x in graph['edges']))
+        self.assertEqual(graph['internal_link_suggestions'][0]['to_url'],'https://example.org/products/bowl-01')
+        self.assertTrue((self.root/'content/commerce-graph.json').exists())
 
 
 class WordPressTests(Fixture):
