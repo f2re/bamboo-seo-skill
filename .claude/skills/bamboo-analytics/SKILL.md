@@ -1,6 +1,6 @@
 ---
 name: bamboo-analytics
-description: Аналитика поискового контента Bamboo с учётом неполных данных и реальных обращений
+description: Анализирует Google Search Console, Яндекс Вебмастер и conversion-данные Bamboo Pottery. Использовать для метрик и гипотез; не использовать для написания или публикации.
 ---
 
 # bamboo-analytics
