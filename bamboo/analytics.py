@@ -1,4 +1,4 @@
-"""Поисковая аналитика: Google Search Console, Яндекс Вебмастер, CSV и безопасные сравнения."""
+"""Поисковая аналитика: Google, Яндекс, query intelligence и конверсии без смешения гранулярностей."""
 from __future__ import annotations
 
 import csv
@@ -13,8 +13,11 @@ from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
+from .commerce import page_index
 from .core import BambooError, config, now, safe, write_json, write_text
+from .domain import canonical_entities, query_cluster_key
 from .net import request, secret
+from .quality import http_url
 
 FIELDS = ("date", "source", "grain", "page", "query", "impressions", "clicks", "position",
           "product_clicks", "leads", "orders", "revenue", "cost")
@@ -27,6 +30,17 @@ COMMERCIAL = re.compile(r"\b(?:выбрать|выбор|сравнить|сра
 INFORMATIONAL = re.compile(r"\b(?:как|что|зачем|почему|чем|отлич|техника|история|уход|использовать)\b", re.I)
 BRANDED = re.compile(r"\b(?:bamboo\s*pottery|бамбу\s*поттери|бамбук\s*поттери)\b", re.I)
 
+YANDEX_EXPORT_HEADERS = {
+    "date": {"date", "дата"},
+    "host": {"host", "хост"},
+    "page": {"url", "page", "адрес", "url страницы"},
+    "query": {"query", "запрос", "поисковый запрос"},
+    "region": {"region", "регион"},
+    "clicks": {"clicks", "клики"},
+    "impressions": {"impressions", "показы"},
+    "position": {"position", "ranking", "позиция"},
+}
+
 
 def connect(root: Path) -> sqlite3.Connection:
     path = safe(root, "analytics/metrics.sqlite3")
@@ -36,6 +50,9 @@ def connect(root: Path) -> sqlite3.Connection:
     db.execute("CREATE TABLE IF NOT EXISTS metrics (date TEXT, source TEXT, grain TEXT, page TEXT, query TEXT, "
                "impressions REAL, clicks REAL, position REAL, product_clicks REAL, leads REAL, orders REAL, "
                "revenue REAL, cost REAL, PRIMARY KEY(date,source,grain,page,query))")
+    db.execute("CREATE TABLE IF NOT EXISTS yandex_enhanced (date TEXT, host TEXT, page TEXT, query TEXT, "
+               "region TEXT, clicks REAL, impressions REAL, position REAL, "
+               "PRIMARY KEY(date,host,page,query,region))")
     return db
 
 
@@ -73,7 +90,7 @@ def ingest(root: Path, rows: list[dict]) -> dict:
     normalized = [normalize(r) for r in rows]
     keys = [tuple(r[k] for k in FIELDS[:5]) for r in normalized]
     if len(keys) != len(set(keys)):
-        raise BambooError("В одной выгрузке повторяется ключ date/source/grain/page/query")
+        raise BambooError("В одной выгрузке повторяется ключ date/source/grain,page,query")
     db = connect(root)
     try:
         with db:
@@ -94,6 +111,92 @@ def import_csv(root: Path, path: Path) -> dict:
             raise BambooError("CSV: нужны заголовки " + ",".join(FIELDS[:5]))
         rows = list(reader)
     return ingest(root, rows)
+
+
+def _header_key(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip().casefold())
+
+
+def _float_csv(value: str, field: str) -> float:
+    try:
+        result = float(value.strip().replace(" ", "").replace(",", "."))
+    except (ValueError, AttributeError) as exc:
+        raise BambooError(f"Яндекс CSV: поле {field} должно быть числом") from exc
+    if not math.isfinite(result) or result < 0:
+        raise BambooError(f"Яндекс CSV: недопустимое значение {field}")
+    return result
+
+
+def import_yandex_enhanced_csv(root: Path, path: Path) -> dict:
+    """Импорт документированного β-CSV: дата, хост, URL, запрос, регион, клики, показы, позиция."""
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        sample = handle.read(8192)
+        handle.seek(0)
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.DictReader(handle, dialect=dialect)
+        fields = reader.fieldnames or []
+        normalized_headers = {_header_key(x): x for x in fields}
+        mapping = {}
+        for canonical, aliases in YANDEX_EXPORT_HEADERS.items():
+            hits = [normalized_headers[a] for a in aliases if a in normalized_headers]
+            if len(hits) != 1:
+                raise BambooError(f"Яндекс CSV: не найден однозначный столбец {canonical}")
+            mapping[canonical] = hits[0]
+
+        raw = []
+        for number, row in enumerate(reader, 2):
+            day = str(row[mapping["date"]]).strip()
+            date.fromisoformat(day)
+            host = str(row[mapping["host"]]).strip()
+            page = str(row[mapping["page"]]).strip()
+            query = str(row[mapping["query"]]).strip()
+            region = str(row[mapping["region"]]).strip()
+            if not host or not query or not region:
+                raise BambooError(f"Яндекс CSV:{number}: пустой хост, запрос или регион")
+            http_url(page)
+            raw.append({"date": day, "host": host, "page": page, "query": query, "region": region,
+                        "clicks": _float_csv(row[mapping["clicks"]], "clicks"),
+                        "impressions": _float_csv(row[mapping["impressions"]], "impressions"),
+                        "position": _float_csv(row[mapping["position"]], "position")})
+
+    keys = [(r["date"], r["host"], r["page"], r["query"], r["region"]) for r in raw]
+    if len(keys) != len(set(keys)):
+        raise BambooError("Яндекс CSV: повтор строки date/host/url/query/region")
+
+    grouped = defaultdict(list)
+    for row in raw:
+        grouped[(row["date"], row["page"], row["query"])].append(row)
+    metrics = []
+    for (day, page, query), items in grouped.items():
+        impressions = sum(x["impressions"] for x in items)
+        clicks = sum(x["clicks"] for x in items)
+        weighted = [x for x in items if x["impressions"] > 0]
+        position = (sum(x["position"] * x["impressions"] for x in weighted) / sum(x["impressions"] for x in weighted)
+                    if weighted else sum(x["position"] for x in items) / len(items))
+        metrics.append(normalize({"date": day, "source": "yandex_enhanced", "grain": "page_query",
+                                  "page": page, "query": query, "impressions": impressions,
+                                  "clicks": clicks, "position": position}))
+
+    db = connect(root)
+    try:
+        with db:
+            db.executemany(
+                "INSERT INTO yandex_enhanced(date,host,page,query,region,clicks,impressions,position) "
+                "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(date,host,page,query,region) DO UPDATE SET "
+                "clicks=excluded.clicks,impressions=excluded.impressions,position=excluded.position",
+                [(r["date"], r["host"], r["page"], r["query"], r["region"], r["clicks"], r["impressions"], r["position"])
+                 for r in raw])
+    finally:
+        db.close()
+    imported = ingest(root, metrics)
+    result = {"raw_rows": len(raw), "page_query_rows": imported["rows_upserted"],
+              "source": "yandex_enhanced",
+              "note": "Региональные строки сохранены отдельно; metrics содержит агрегат date×URL×query без двойного счёта."}
+    write_json(safe(root, "analytics/yandex-enhanced-import.json"), {**result, "file": path.name, "imported_at": now()})
+    return result
 
 
 def google_token() -> str:
@@ -176,7 +279,6 @@ def _yandex_connection(root: Path) -> tuple[str, dict]:
 
 
 def yandex_export_dates(root: Path) -> dict:
-    """Доступные даты расширенной URL×query выгрузки; сеть только по явной команде."""
     base, headers = _yandex_connection(root)
     result = request(base + "/pro/serp/dates", headers=headers, readonly=True)
     dates = result.get("dates")
@@ -189,14 +291,11 @@ def yandex_export_dates(root: Path) -> dict:
 
 def yandex_export_start(root: Path, dates: list[str], paths: list[str],
                         region_ids: list[int] | None = None, use_pro: bool = False) -> dict:
-    """Создать асинхронную β-выгрузку. Операция расходует квоту и намеренно не повторяется."""
     if not dates or not paths:
         raise BambooError("Для расширенной выгрузки нужны хотя бы одна дата и один URL-путь")
     if len(paths) > 100:
         raise BambooError("Яндекс: за один запрос допускается не более 100 URL-путей")
-    normalized_dates = []
-    for value in dates:
-        normalized_dates.append(date.fromisoformat(value).isoformat())
+    normalized_dates = [date.fromisoformat(value).isoformat() for value in dates]
     normalized_paths = []
     for value in paths:
         if not isinstance(value, str) or not value.startswith("/") or "://" in value or any(ord(x) < 32 for x in value):
@@ -223,7 +322,6 @@ def yandex_export_start(root: Path, dates: list[str], paths: list[str],
 
 
 def yandex_export_status(root: Path, task_id: str) -> dict:
-    """Проверить асинхронную выгрузку. Не скачивает URL и не запускает polling."""
     try:
         task = str(uuid.UUID(str(task_id)))
     except (ValueError, TypeError, AttributeError) as exc:
@@ -236,7 +334,7 @@ def yandex_export_status(root: Path, task_id: str) -> dict:
     output = {"task_id": task, "download_status": status}
     if status == "SUCCESS":
         output["url"] = result.get("url")
-        output["note"] = "Ссылка временная. Скачайте CSV и импортируйте после проверки схемы; автоматического polling нет."
+        output["note"] = "Ссылка временная. Скачайте CSV и импортируйте analytics-yandex-import."
     elif status == "FAILED":
         output["error_code"] = result.get("error_code")
         output["error_message"] = result.get("error_message")
@@ -264,8 +362,8 @@ def pull(root: Path, provider: str, start: str, end: str) -> dict:
         token = secret("BAMBOO_YANDEX_TOKEN")
         rows = (yandex_rows(user, host, token, start, end, "URL") +
                 yandex_rows(user, host, token, start, end, "QUERY"))
-        limitation = ("Яндекс Query Analytics: данные доступны за последние две недели. QUERY — агрегат по запросу; "
-                      "поле page в grain=query содержит только popular complementary URL и не является query×page.")
+        limitation = ("Яндекс Query Analytics: последние две недели. QUERY — агрегат по запросу; "
+                      "page в grain=query содержит только popular complementary URL.")
     else:
         raise BambooError("Поддерживаются google и yandex")
     result = ingest(root, rows)
@@ -289,7 +387,6 @@ def summarize(rows: list[dict]) -> dict:
 
 
 def query_intent_hint(query: str) -> str:
-    """Грубая эвристика для triage; не заменяет SERP-анализ."""
     if BRANDED.search(query):
         return "branded"
     if TRANSACTIONAL.search(query):
@@ -303,8 +400,7 @@ def query_intent_hint(query: str) -> str:
 
 def _period(items: list[dict], current_start: date) -> tuple[list[dict], list[dict]]:
     boundary = current_start.isoformat()
-    return ([r for r in items if r["date"] >= boundary],
-            [r for r in items if r["date"] < boundary])
+    return ([r for r in items if r["date"] >= boundary], [r for r in items if r["date"] < boundary])
 
 
 def _page_suggestion(cur: dict, enough: bool) -> str:
@@ -312,9 +408,9 @@ def _page_suggestion(cur: dict, enough: bool) -> str:
         return "Недостаточно данных: наблюдать, не удалять страницу"
     position, ctr = cur["position"], cur["ctr"]
     if position is not None and position <= 10 and ctr is not None and ctr < 0.02:
-        return "Гипотеза: проверить сниппет и совпадение намерения; низкий CTR оценивается только вместе с позицией и запросами"
+        return "Гипотеза: проверить сниппет и совпадение намерения; CTR оценивается вместе с позицией и запросами"
     if position is not None and 10 < position <= 20:
-        return "Гипотеза: проверить полноту ответа, внутренние ссылки и соответствие запросам до переписывания заголовка"
+        return "Гипотеза: проверить полноту ответа, внутренние ссылки и соответствие запросам"
     return "Проверить состав запросов и связь с изделиями; автоматическое изменение не требуется"
 
 
@@ -345,15 +441,40 @@ def _query_records(rows: list[dict], current_start: date, minimum: float) -> lis
             candidates = [r for r in current if r["page"]]
             if candidates:
                 page_hint = max(candidates, key=lambda r: r["impressions"] or 0)["page"]
-        records.append({"source": source, "grain": grain, "query": query,
-                        "page": page if grain == "page_query" else None,
-                        "page_hint": page_hint if grain == "query" else None,
-                        "mapping_note": ("exact page×query dimension" if grain == "page_query"
-                                         else "page_hint is Yandex popular complementary URL, not attribution"),
-                        "intent_hint": query_intent_hint(query),
-                        "current": cur, "previous": prev,
-                        "suggestion": _query_suggestion(cur, minimum)})
+        records.append({
+            "source": source, "grain": grain, "query": query,
+            "page": page if grain == "page_query" else None,
+            "page_hint": page_hint if grain == "query" else None,
+            "mapping_note": ("exact page×query dimension" if grain == "page_query"
+                             else "page_hint is Yandex popular complementary URL, not attribution"),
+            "intent_hint": query_intent_hint(query),
+            "cluster_hint": query_cluster_key(query),
+            "entities": canonical_entities(query),
+            "current": cur, "previous": prev, "suggestion": _query_suggestion(cur, minimum)
+        })
     return sorted(records, key=lambda x: (x["current"]["impressions"] or 0, x["current"]["clicks"] or 0), reverse=True)
+
+
+def _query_clusters(records: list[dict]) -> list[dict]:
+    groups = defaultdict(list)
+    for item in records:
+        groups[(item["intent_hint"], item["cluster_hint"])].append(item)
+    result = []
+    for (intent, cluster), items in groups.items():
+        impressions = sum((x["current"]["impressions"] or 0) for x in items)
+        clicks = sum((x["current"]["clicks"] or 0) for x in items)
+        weighted = [(x["current"]["position"], x["current"]["impressions"])
+                    for x in items if x["current"]["position"] is not None and (x["current"]["impressions"] or 0) > 0]
+        position = (sum(p * imp for p, imp in weighted) / sum(imp for _, imp in weighted)) if weighted else None
+        pages = sorted({x["page"] for x in items if x["page"]})
+        hints = sorted({x["page_hint"] for x in items if x["page_hint"]})
+        queries = sorted(items, key=lambda x: x["current"]["impressions"] or 0, reverse=True)[:10]
+        result.append({"intent_hint": intent, "cluster_hint": cluster, "impressions": impressions,
+                       "clicks": clicks, "ctr": clicks / impressions if impressions else None,
+                       "position": position, "pages": pages, "page_hints": hints,
+                       "queries": [{"query": x["query"], "impressions": x["current"]["impressions"],
+                                    "clicks": x["current"]["clicks"]} for x in queries]})
+    return sorted(result, key=lambda x: x["impressions"], reverse=True)
 
 
 def _cannibalization_candidates(rows: list[dict], current_start: date, minimum: float) -> list[dict]:
@@ -372,8 +493,31 @@ def _cannibalization_candidates(rows: list[dict], current_start: date, minimum: 
         if len(visible) > 1 and total >= minimum:
             result.append({"source": source, "query": query, "total_impressions": total,
                            "pages": sorted(visible, key=lambda x: x["impressions"], reverse=True),
-                           "note": "Кандидат на проверку, не доказанная каннибализация: один запрос виден у нескольких URL."})
+                           "note": "Кандидат на проверку, не доказанная каннибализация."})
     return sorted(result, key=lambda x: x["total_impressions"], reverse=True)
+
+
+def _intent_mismatch_candidates(root: Path, records: list[dict], minimum: float) -> list[dict]:
+    pages = page_index(root)
+    result = []
+    for item in records:
+        if not item["page"] or (item["current"]["impressions"] or 0) < minimum:
+            continue
+        meta = pages.get(item["page"])
+        if not meta:
+            continue
+        intent, page_type = item["intent_hint"], meta.get("page_type")
+        reason = None
+        if intent == "transactional" and page_type in ("article", "technique", "term"):
+            reason = "Транзакционный запрос ведёт на информационный тип страницы"
+        elif intent == "informational" and page_type == "product":
+            reason = "Информационный запрос ведёт прямо на product; проверить полноту ответа"
+        if reason:
+            result.append({"source": item["source"], "query": item["query"], "page": item["page"],
+                           "intent_hint": intent, "page_type": page_type,
+                           "impressions": item["current"]["impressions"], "reason": reason,
+                           "note": "Кандидат на ручную SERP/страничную проверку, не автоматический дефект."})
+    return sorted(result, key=lambda x: x["impressions"], reverse=True)
 
 
 def _conversion_records(rows: list[dict], current_start: date) -> list[dict]:
@@ -388,7 +532,27 @@ def _conversion_records(rows: list[dict], current_start: date) -> list[dict]:
         leads, orders = cur["leads"], cur["orders"]
         cur["lead_to_order_rate"] = (orders / leads if orders is not None and leads else None)
         result.append({"source": source, "page": page, "current": cur, "previous": prev,
-                       "note": "Конверсии показываются отдельно и не приписываются поисковой системе без явной атрибуции источника."})
+                       "note": "Конверсии не приписываются поиску без явного source."})
+    return result
+
+
+def _funnels(pages: list[dict], conversions: list[dict]) -> list[dict]:
+    search = {(x["source"], x["page"]): x for x in pages}
+    result = []
+    for conversion in conversions:
+        key = (conversion["source"], conversion["page"])
+        page = search.get(key)
+        if not page:
+            continue
+        clicks = page["current"]["clicks"]
+        cur = conversion["current"]
+        if not clicks:
+            continue
+        result.append({"source": key[0], "page": key[1], "search_clicks": clicks,
+                       "product_click_rate": cur["product_clicks"] / clicks if cur["product_clicks"] is not None else None,
+                       "lead_rate": cur["leads"] / clicks if cur["leads"] is not None else None,
+                       "order_rate": cur["orders"] / clicks if cur["orders"] is not None else None,
+                       "note": "Воронка рассчитана только потому, что conversion.source совпадает с источником поисковой страницы."})
     return result
 
 
@@ -424,20 +588,24 @@ def report(root: Path, end: str, days: int = 7) -> dict:
 
     all_queries = _query_records(rows, current_start, minimum)
     queries = all_queries[:QUERY_REPORT_LIMIT]
+    clusters = _query_clusters(all_queries)
     candidates = _cannibalization_candidates(rows, current_start, minimum)
+    mismatch = _intent_mismatch_candidates(root, all_queries, minimum)
     conversions = _conversion_records(rows, current_start)
+    funnels = _funnels(pages, conversions)
 
     output = {
         "current": [current_start.isoformat(), end],
         "previous": [previous_start.isoformat(), (current_start - timedelta(days=1)).isoformat()],
-        "pages": pages,
-        "queries": queries,
-        "query_count_total": len(all_queries),
-        "query_count_returned": len(queries),
+        "pages": pages, "queries": queries,
+        "query_count_total": len(all_queries), "query_count_returned": len(queries),
+        "query_clusters": clusters,
         "cannibalization_candidates": candidates,
-        "conversions": conversions,
-        "policy": ("Page, page_query/query и conversion не складываются между собой. Intent — эвристическая подсказка. "
-                   "Яндекс grain=query не является парой query×page. Рекомендации — гипотезы, не автоматические правки.")
+        "intent_mismatch_candidates": mismatch,
+        "conversions": conversions, "funnels": funnels,
+        "policy": ("Page, page_query/query и conversion не складываются. Кластеры/intent — эвристики. "
+                   "Яндекс grain=query не является query×page; yandex_enhanced является точным URL×query. "
+                   "Все mismatch/cannibalization — кандидаты на проверку, не автоматические решения.")
     }
     write_json(safe(root, "analytics/report.json"), output)
 
@@ -445,25 +613,39 @@ def report(root: Path, end: str, days: int = 7) -> dict:
     for item in pages:
         lines += [f'\n## {item["page"]} ({item["source"]})',
                   f'Клики: {item["current"]["clicks"]}; показы: {item["current"]["impressions"]}; '
-                  f'позиция: {item["current"]["position"]}; дней с данными: {item["current"]["observed_days"]}/{days}.',
+                  f'позиция: {item["current"]["position"]}; дней: {item["current"]["observed_days"]}/{days}.',
                   item["suggestion"]]
     if queries:
         lines.append("\n# Поисковые запросы")
         for item in queries[:20]:
             target = item["page"] or item["page_hint"] or "без URL-привязки"
-            lines.append(f'- {item["query"]} [{item["source"]}, {item["intent_hint"]}] → {target}; '
+            lines.append(f'- {item["query"]} [{item["source"]}, {item["intent_hint"]}, {item["cluster_hint"]}] → {target}; '
                          f'показы {item["current"]["impressions"]}, клики {item["current"]["clicks"]}, '
-                         f'позиция {item["current"]["position"]}. {item["suggestion"]}')
+                         f'позиция {item["current"]["position"]}.')
+    if clusters:
+        lines.append("\n# Кластеры спроса")
+        for item in clusters[:15]:
+            lines.append(f'- {item["cluster_hint"]} / {item["intent_hint"]}: показы {item["impressions"]}, '
+                         f'клики {item["clicks"]}, CTR {item["ctr"]}.')
     if candidates:
         lines.append("\n# Кандидаты на каннибализацию")
         for item in candidates[:20]:
             lines.append(f'- {item["query"]}: ' + "; ".join(p["page"] for p in item["pages"]))
+    if mismatch:
+        lines.append("\n# Кандидаты на mismatch намерения")
+        for item in mismatch[:20]:
+            lines.append(f'- {item["query"]} → {item["page"]}: {item["reason"]}.')
     if conversions:
         lines.append("\n# Конверсии")
         for item in conversions:
             cur = item["current"]
-            lines.append(f'- {item["page"]} ({item["source"]}): переходы к товару {cur["product_clicks"]}, '
+            lines.append(f'- {item["page"]} ({item["source"]}): product_clicks {cur["product_clicks"]}, '
                          f'лиды {cur["leads"]}, заказы {cur["orders"]}, выручка {cur["revenue"]}, затраты {cur["cost"]}.')
+    if funnels:
+        lines.append("\n# Воронки с явной атрибуцией")
+        for item in funnels:
+            lines.append(f'- {item["page"]} ({item["source"]}): product CTR {item["product_click_rate"]}, '
+                         f'lead/click {item["lead_rate"]}, order/click {item["order_rate"]}.')
     if not pages and not queries and not conversions:
         lines.append("\nДанных нет. Это не означает отсутствие трафика.")
     write_text(safe(root, "analytics/report.md"), "\n".join(lines) + "\n")
