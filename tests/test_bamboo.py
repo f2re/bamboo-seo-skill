@@ -170,6 +170,13 @@ class CoreTests(Fixture):
         self.good(photo=True);(self.root/'content/media/test.png').write_bytes(b'changed')
         self.assertFalse(q.validate(self.root,'example')['ok'])
 
+    def test_product_commerce_url_is_validated(self):
+        self.good(photo=True)
+        write_json(self.root/'content/products/bowl-01.json',
+                   {'id':'bowl-01','confirmed':True,'volume_ml':200,'product_url':'javascript:alert(1)'})
+        self.assertFalse(q.validate(self.root,'example')['ok'])
+
+
     def test_review_template_not_approval(self):
         self.good();q.review_template(self.root,'example')
         with self.assertRaises(BambooError): q.approve(self.root,'example',approval_token(self.root,'example'))
@@ -206,6 +213,9 @@ class CoreTests(Fixture):
         self.assertNotIn('[[fact]]',text)
         self.assertFalse(result['published'])
         self.assertEqual((Path(result['path'])/'media'/f'{digest(PNG)}.png').read_bytes(),PNG)
+        commerce=read_json(Path(result['path'])/'commerce.json')
+        self.assertEqual(commerce['product_ids'],['bowl-01'])
+        self.assertEqual(commerce['products'][0]['id'],'bowl-01')
 
     def test_escaping(self):
         text=p.page('<img onerror=x>','" onload="x',p.markdown('<b>unsafe</b>'))
