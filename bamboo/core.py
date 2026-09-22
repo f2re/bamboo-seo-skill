@@ -143,7 +143,7 @@ def init(root: Path) -> dict:
         if path.exists():
             return {"status": "exists", "workspace": str(root.resolve())}
         write_json(path, DEFAULTS)
-        for folder in ("content/products", "content/media", "content/voice", "content/jobs", "analytics"):
+        for folder in ("content/products", "content/collections", "content/media", "content/voice", "content/jobs", "analytics"):
             safe(root, folder).mkdir(parents=True, exist_ok=True)
         write_text(safe(root, "content/voice/README.md"),
                    "Добавьте сюда подтверждённые публичные тексты мастера в .md.\n"
