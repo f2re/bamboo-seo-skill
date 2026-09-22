@@ -45,7 +45,7 @@ def adapters(source: Path, systems: set[str], engine: str) -> tuple[dict[str, st
     files = {}
     prefix = engine.rstrip("/") + "/" if engine != "." else ""
     instruction = (f"{BEGIN}\n## Bamboo Pottery\n"
-        f"Для контента прочитайте `{prefix}docs/WORKFLOW.md` и `{prefix}docs/BRAND.md`. "
+        f"Для контента прочитайте `{prefix}docs/WORKFLOW.md`, `{prefix}docs/BRAND.md`, `{prefix}docs/DOMAIN.md` и `{prefix}docs/COMMERCE.md`. "
         "Работайте из корня проекта; CLI: `python bamboo.py --help`. Данные — в `bamboo.json` и `content/`.\n"
         "Не выдумывайте характеристики, происхождение, отзывы, опыт мастера, наличие и цены. "
         "Не публикуйте и не утверждайте от имени человека без его явного поручения на конкретную версию.\n"
