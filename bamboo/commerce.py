@@ -58,9 +58,11 @@ def build_graph(root: Path) -> dict:
         if obj.get("product_url"):
             http_url(obj["product_url"])
             product_host = urlsplit(obj["product_url"]).hostname
+            images = [x for x in (obj.get("photo_set") or [])
+                      if isinstance(x, str) and urlsplit(x).scheme in ("http", "https") and urlsplit(x).hostname]
             required = {
                 "name": obj.get("name"),
-                "image": obj.get("photo_set"),
+                "image": images,
                 "offers.price": obj.get("price"),
                 "offers.priceCurrency": obj.get("currency"),
                 "offers.availability": obj.get("availability")
