@@ -88,7 +88,9 @@ python bamboo.py review-template first-bowl
 python bamboo.py status first-bowl
 ```
 
-`export` создаёт `exports/first-bowl/preview.html`, тексты форматов и копии реальных фотографий.
+`export` создаёт `exports/first-bowl/preview.html`, тексты форматов и копии реальных фотографий,
+а также `commerce.json` с безопасной выборкой товарных ссылок/ID. Для формата ВК дополнительно
+создаётся `vk.json` с текстом, CTA, порядком фото и связанными товарами. API ВК не вызывается.
 В превью установлен `noindex,nofollow`. Оно локальное; публичного действия нет.
 
 Человек проверяет превью и `review.json`: указывает своё имя, комментарии, отмечает
