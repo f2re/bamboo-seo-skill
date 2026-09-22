@@ -45,6 +45,12 @@ flowchart TD
   "formats": ["card"],
   "product_ids": [],
   "intent": "понять, какие детали изделия спросить у мастера перед покупкой",
+  "seo": {
+    "page_type": "article",
+    "cluster": "chawan",
+    "target_url": null,
+    "related_urls": []
+  },
   "master_notes": "Только подтверждённые и разрешённые владельцем сведения",
   "master_notes_public": true,
   "demand": {"status": "unknown", "evidence": []}
