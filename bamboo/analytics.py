@@ -166,8 +166,25 @@ def import_yandex_enhanced_csv(root: Path, path: Path) -> dict:
     if len(keys) != len(set(keys)):
         raise BambooError("Яндекс CSV: повтор строки date/host/url/query/region")
 
+    affected = sorted({(r["date"], r["page"], r["query"]) for r in raw})
+    db = connect(root)
+    try:
+        with db:
+            db.executemany(
+                "INSERT INTO yandex_enhanced(date,host,page,query,region,clicks,impressions,position) "
+                "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(date,host,page,query,region) DO UPDATE SET "
+                "clicks=excluded.clicks,impressions=excluded.impressions,position=excluded.position",
+                [(r["date"], r["host"], r["page"], r["query"], r["region"], r["clicks"], r["impressions"], r["position"])
+                 for r in raw])
+        stored = []
+        for day, page, query in affected:
+            stored.extend(dict(x) for x in db.execute(
+                "SELECT * FROM yandex_enhanced WHERE date=? AND page=? AND query=?", (day, page, query)))
+    finally:
+        db.close()
+
     grouped = defaultdict(list)
-    for row in raw:
+    for row in stored:
         grouped[(row["date"], row["page"], row["query"])].append(row)
     metrics = []
     for (day, page, query), items in grouped.items():
@@ -179,18 +196,6 @@ def import_yandex_enhanced_csv(root: Path, path: Path) -> dict:
         metrics.append(normalize({"date": day, "source": "yandex_enhanced", "grain": "page_query",
                                   "page": page, "query": query, "impressions": impressions,
                                   "clicks": clicks, "position": position}))
-
-    db = connect(root)
-    try:
-        with db:
-            db.executemany(
-                "INSERT INTO yandex_enhanced(date,host,page,query,region,clicks,impressions,position) "
-                "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(date,host,page,query,region) DO UPDATE SET "
-                "clicks=excluded.clicks,impressions=excluded.impressions,position=excluded.position",
-                [(r["date"], r["host"], r["page"], r["query"], r["region"], r["clicks"], r["impressions"], r["position"])
-                 for r in raw])
-    finally:
-        db.close()
     imported = ingest(root, metrics)
     result = {"raw_rows": len(raw), "page_query_rows": imported["rows_upserted"],
               "source": "yandex_enhanced",
