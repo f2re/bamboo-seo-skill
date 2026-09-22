@@ -159,6 +159,14 @@ class CoreTests(Fixture):
         self.change('claims.json',lambda d:d[0].update(text='Подтверждено: исинская глина. Объём 200 мл.'))
         self.assertTrue(q.validate(self.root,'example')['ok'])
 
+    def test_metadata_requires_matching_evidence_too(self):
+        self.good()
+        self.change('pack.json',lambda d:d.update(title='Чаша из исинской глины'))
+        self.assertFalse(q.validate(self.root,'example')['ok'])
+        self.change('claims.json',lambda d:d[0].update(text='Подтверждено: исинская глина. Объём 200 мл.'))
+        self.assertTrue(q.validate(self.root,'example')['ok'])
+
+
     def test_affirmative_health_claim_is_error_but_refutation_is_warning(self):
         affirmative=q.lint('Эта глина очищает воду.')
         refutation=q.lint('Нет доказательств, что эта глина очищает воду.')
