@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from . import __version__
 from .core import BambooError
 from .quality import http_url
 
@@ -28,7 +29,7 @@ def request(url: str, *, payload: Any = None, headers: dict | None = None,
             method: str | None = None, readonly: bool = False) -> Any:
     http_url(url, https_only=True)
     data = payload if isinstance(payload, bytes) else (None if payload is None else json.dumps(payload).encode())
-    hdr = {"Accept": "application/json", "User-Agent": "BambooSEO/1.0"}
+    hdr = {"Accept": "application/json", "User-Agent": f"BambooSEO/{__version__}"}
     if data is not None and not isinstance(payload, bytes):
         hdr["Content-Type"] = "application/json; charset=utf-8"
     hdr.update(headers or {})
