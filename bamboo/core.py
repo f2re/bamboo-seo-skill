@@ -140,15 +140,17 @@ def init(root: Path) -> dict:
     root.mkdir(parents=True, exist_ok=True)
     with lock(root):
         path = safe(root, "bamboo.json")
-        if path.exists():
-            return {"status": "exists", "workspace": str(root.resolve())}
-        write_json(path, DEFAULTS)
+        existed = path.exists()
+        if not existed:
+            write_json(path, DEFAULTS)
         for folder in ("content/products", "content/collections", "content/media", "content/voice", "content/jobs", "analytics"):
             safe(root, folder).mkdir(parents=True, exist_ok=True)
-        write_text(safe(root, "content/voice/README.md"),
-                   "Добавьте сюда подтверждённые публичные тексты мастера в .md.\n"
-                   "Не добавляйте переписку покупателей и непубличные данные.\n")
-    return {"status": "created", "workspace": str(root.resolve())}
+        voice_readme = safe(root, "content/voice/README.md")
+        if not voice_readme.exists():
+            write_text(voice_readme,
+                       "Добавьте сюда подтверждённые публичные тексты мастера в .md.\n"
+                       "Не добавляйте переписку покупателей и непубличные данные.\n")
+    return {"status": "exists" if existed else "created", "workspace": str(root.resolve())}
 
 
 def job_path(root: Path, name: str) -> Path:
