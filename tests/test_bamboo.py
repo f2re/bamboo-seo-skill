@@ -414,6 +414,35 @@ class AnalyticsTests(Fixture):
         self.assertEqual(a.query_intent_hint('как выбрать тяван'),'commercial_research')
         self.assertEqual(a.query_intent_hint('Bamboo Pottery'),'branded')
 
+    def test_yandex_enhanced_export_is_explicit_and_quota_aware(self):
+        cfg=config(self.root);cfg['analytics'].update(yandex_user_id='7',yandex_host_id='host-id');write_json(self.root/'bamboo.json',cfg)
+        task='2f1c5d3b-7d9b-4c3e-8a14-9d8b924a12ef'
+        response={'task_id':task,'free_quota_used':2,'pro_quota_used':0,'total_quota_used':2,
+                  'free_quota_remaining':98,'pro_quota_remaining':0}
+        with patch.dict(os.environ,{'BAMBOO_YANDEX_TOKEN':'SECRET'},clear=True):
+            with patch('bamboo.analytics.request',return_value=response) as req:
+                result=a.yandex_export_start(self.root,['2026-09-20'],['/journal/a','/catalog'],[],False)
+        self.assertEqual(result['task_id'],task)
+        self.assertEqual(req.call_args.kwargs['payload']['use_pro_tariff'],'false')
+        self.assertEqual(req.call_args.kwargs['payload']['paths'],['/journal/a','/catalog'])
+        self.assertNotIn('readonly',req.call_args.kwargs)
+        self.assertTrue((self.root/f'analytics/yandex-export-{task}.json').exists())
+
+    def test_yandex_enhanced_export_status_does_not_poll(self):
+        cfg=config(self.root);cfg['analytics'].update(yandex_user_id='7',yandex_host_id='host-id');write_json(self.root/'bamboo.json',cfg)
+        task='2f1c5d3b-7d9b-4c3e-8a14-9d8b924a12ef'
+        with patch.dict(os.environ,{'BAMBOO_YANDEX_TOKEN':'SECRET'},clear=True):
+            with patch('bamboo.analytics.request',return_value={'download_status':'SUCCESS','url':'https://storage.example/report.csv'}) as req:
+                result=a.yandex_export_status(self.root,task)
+        self.assertEqual(result['download_status'],'SUCCESS')
+        self.assertTrue(req.call_args.kwargs['readonly'])
+        self.assertEqual(req.call_count,1)
+
+    def test_yandex_export_rejects_absolute_url_path(self):
+        cfg=config(self.root);cfg['analytics'].update(yandex_user_id='7',yandex_host_id='host-id');write_json(self.root/'bamboo.json',cfg)
+        with self.assertRaises(BambooError):
+            a.yandex_export_start(self.root,['2026-09-20'],['https://example.org/a'])
+
     def test_oauth_form_and_secrets_not_in_url(self):
         with patch.dict(os.environ,{'BAMBOO_GSC_CLIENT_ID':'client','BAMBOO_GSC_CLIENT_SECRET':'SECRET','BAMBOO_GSC_REFRESH_TOKEN':'REFRESH'},clear=True):
             with patch('bamboo.analytics.request',return_value={'access_token':'result'}) as req:
