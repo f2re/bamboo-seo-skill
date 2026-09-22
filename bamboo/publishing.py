@@ -75,12 +75,26 @@ def body(root: Path, name: str, photo_urls: list[str] | None = None) -> str:
     return text
 
 
+def structured_json(items: list[dict] | None) -> str:
+    if not items:
+        return ""
+    payload = json.dumps(items if len(items) > 1 else items[0], ensure_ascii=False, separators=(",", ":"))
+    payload = payload.replace("<", "\\u003c")
+    return '<script type="application/ld+json">' + payload + '</script>'
+
+
 def page(title: str, description: str, content: str, canonical: str | None = None,
-         draft: bool = True) -> str:
+         draft: bool = True, structured: list[dict] | None = None,
+         og_type: str = "website") -> str:
     esc = html.escape
     head = '<meta name="robots" content="noindex,nofollow">' if draft else ""
+    head += (f'<meta property="og:title" content="{esc(title, quote=True)}">'
+             f'<meta property="og:description" content="{esc(description, quote=True)}">'
+             f'<meta property="og:type" content="{esc(og_type, quote=True)}">')
     if canonical:
-        head += f'<link rel="canonical" href="{esc(canonical, quote=True)}">'
+        head += (f'<link rel="canonical" href="{esc(canonical, quote=True)}">'
+                 f'<meta property="og:url" content="{esc(canonical, quote=True)}">')
+    head += structured_json(structured)
     return (f'<!doctype html>\n<html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
             f'<title>{esc(title)}</title><meta name="description" content="{esc(description, quote=True)}">{head}'
             '<style>body{font:18px/1.65 system-ui,sans-serif;max-width:800px;margin:3rem auto;padding:0 1rem}'
@@ -127,8 +141,21 @@ def publish_static(root: Path, name: str) -> dict:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(safe(src, photo["file"]), target)
     canonical = base + f"/journal/{name}/"
+    image_urls = [canonical + p["file"] for p in photos]
+    structured = [
+        {"@context": "https://schema.org", "@type": "Article",
+         "headline": pack["title"], "description": pack["description"], "inLanguage": "ru",
+         "mainEntityOfPage": canonical, "publisher": {"@type": "Organization", "name": config(root)["brand"]},
+         **({"image": image_urls} if image_urls else {})},
+        {"@context": "https://schema.org", "@type": "BreadcrumbList",
+         "itemListElement": [
+             {"@type": "ListItem", "position": 1, "name": "Журнал", "item": base + "/"},
+             {"@type": "ListItem", "position": 2, "name": pack["title"], "item": canonical}
+         ]}
+    ]
     write_text(dest / "index.html", page(pack["title"], pack["description"],
-                                       body(root, name, [p["file"] for p in photos]), canonical, draft=False))
+                                       body(root, name, [p["file"] for p in photos]), canonical,
+                                       draft=False, structured=structured, og_type="article"))
     registry_path = safe(root, "site/registry.json")
     registry = read_json(registry_path) if registry_path.exists() else {}
     registry[name] = {"title": pack["title"], "url": canonical, "updated_at": now(), "content_hash": snapshot(root, name)}
