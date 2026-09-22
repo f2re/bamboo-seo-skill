@@ -16,30 +16,57 @@ def _json_files(path: Path) -> list[Path]:
 
 
 def page_index(root: Path) -> dict[str, dict]:
-    result = {}
+    result: dict[str, dict] = {}
+
+    def add(url: str, meta: dict) -> None:
+        try:
+            http_url(url)
+        except BambooError:
+            return
+        if url not in result:
+            result[url] = meta
+            return
+        previous = result[url]
+        entries = previous.get("entries", [previous])
+        result[url] = {"ambiguous": True, "entries": entries + [meta],
+                       "page_type": None, "cluster": None, "product_ids": []}
+
+    for path in _json_files(safe(root, "content/products")):
+        product = read_json(path)
+        if product.get("product_url"):
+            add(product["product_url"], {"entity": f"product:{product.get('id')}", "page_type": "product",
+                                         "cluster": product.get("collection") or product.get("type"),
+                                         "product_ids": [product.get("id")] if product.get("id") else []})
+
+    collection_dir = safe(root, "content/collections")
+    if collection_dir.exists():
+        for path in _json_files(collection_dir):
+            collection = read_json(path)
+            if collection.get("url"):
+                add(collection["url"], {"entity": f"collection:{collection.get('id')}", "page_type": "category",
+                                        "cluster": collection.get("cluster") or collection.get("id"),
+                                        "product_ids": collection.get("product_ids", [])})
+
     jobs = safe(root, "content/jobs")
-    if not jobs.exists():
-        return result
-    for folder in sorted(p for p in jobs.iterdir() if p.is_dir() and not p.is_symlink()):
-        brief_path = folder / "brief.json"
-        if not brief_path.is_file():
-            continue
-        brief = read_json(brief_path)
-        seo = brief.get("seo") or {}
-        url = seo.get("target_url")
-        if url:
-            try:
-                http_url(url)
-            except BambooError:
+    if jobs.exists():
+        for folder in sorted(p for p in jobs.iterdir() if p.is_dir() and not p.is_symlink()):
+            brief_path = folder / "brief.json"
+            if not brief_path.is_file():
                 continue
-            result[url] = {"slug": brief.get("slug", folder.name), "page_type": seo.get("page_type"),
-                           "cluster": seo.get("cluster"), "product_ids": brief.get("product_ids", [])}
+            brief = read_json(brief_path)
+            seo = brief.get("seo") or {}
+            url = seo.get("target_url")
+            if url:
+                add(url, {"entity": f"job:{brief.get('slug', folder.name)}",
+                          "slug": brief.get("slug", folder.name), "page_type": seo.get("page_type"),
+                          "cluster": seo.get("cluster"), "product_ids": brief.get("product_ids", [])})
     return result
 
 
 def build_graph(root: Path) -> dict:
     products, collections, jobs = {}, {}, {}
     warnings, edges, suggestions, structured = [], [], [], []
+    target_entities = defaultdict(list)
     site_url = config(root).get("site_url")
     site_host = urlsplit(site_url).hostname if site_url else None
 
@@ -57,6 +84,7 @@ def build_graph(root: Path) -> dict:
                              "message": "Подтверждённый товар не имеет product_url; SEO/CTA-связь ограничена"})
         if obj.get("product_url"):
             http_url(obj["product_url"])
+            target_entities[obj["product_url"]].append(f"product:{pid}")
             product_host = urlsplit(obj["product_url"]).hostname
             images = [x for x in (obj.get("photo_set") or [])
                       if isinstance(x, str) and urlsplit(x).scheme in ("http", "https") and urlsplit(x).hostname]
@@ -90,6 +118,7 @@ def build_graph(root: Path) -> dict:
             collections[cid] = obj
             if obj.get("url"):
                 http_url(obj["url"])
+                target_entities[obj["url"]].append(f"collection:{cid}")
             for pid in obj.get("product_ids", []):
                 if pid not in products:
                     warnings.append({"code": "collection_missing_product", "collection_id": cid, "product_id": pid,
@@ -118,6 +147,7 @@ def build_graph(root: Path) -> dict:
             if target:
                 http_url(target)
                 target_urls[target].append(name)
+                target_entities[target].append(f"job:{name}")
             for url in seo.get("related_urls", []):
                 http_url(url)
                 edges.append({"from": f"job:{name}", "to": url, "relation": "related_url"})
@@ -137,6 +167,10 @@ def build_graph(root: Path) -> dict:
         if len(names) > 1:
             warnings.append({"code": "duplicate_target_url", "url": url, "jobs": names,
                              "message": "Несколько задач заявляют один target_url"})
+    for url, entities in target_entities.items():
+        if len(entities) > 1:
+            warnings.append({"code": "cross_entity_url_collision", "url": url, "entities": entities,
+                             "message": "Один URL одновременно заявлен разными сущностями commerce graph"})
 
     clusters = defaultdict(lambda: {"jobs": [], "products": [], "collections": []})
     for name, item in jobs.items():
