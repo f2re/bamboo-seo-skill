@@ -7,6 +7,7 @@ import math
 import os
 import re
 import sqlite3
+import uuid
 from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
@@ -162,6 +163,85 @@ def yandex_rows(user: str, host: str, token: str, start: str, end: str,
         if offset + len(items) >= data["count"] or not items:
             return result
     raise BambooError("Яндекс: достигнут защитный предел пагинации")
+
+
+def _yandex_connection(root: Path) -> tuple[str, dict]:
+    settings = config(root)["analytics"]
+    user, host = settings.get("yandex_user_id"), settings.get("yandex_host_id")
+    if not user or not host:
+        raise BambooError("Заполните analytics.yandex_user_id и yandex_host_id")
+    base = ("https://api.webmaster.yandex.net/v4/user/" + quote(str(user), safe="") +
+            "/hosts/" + quote(host, safe=""))
+    return base, {"Authorization": "OAuth " + secret("BAMBOO_YANDEX_TOKEN")}
+
+
+def yandex_export_dates(root: Path) -> dict:
+    """Доступные даты расширенной URL×query выгрузки; сеть только по явной команде."""
+    base, headers = _yandex_connection(root)
+    result = request(base + "/pro/serp/dates", headers=headers, readonly=True)
+    dates = result.get("dates")
+    if not isinstance(dates, list) or any(not isinstance(x, str) for x in dates):
+        raise BambooError("Яндекс: неожиданный ответ списка доступных дат")
+    for value in dates:
+        date.fromisoformat(value)
+    return {"dates": dates, "count": len(dates)}
+
+
+def yandex_export_start(root: Path, dates: list[str], paths: list[str],
+                        region_ids: list[int] | None = None, use_pro: bool = False) -> dict:
+    """Создать асинхронную β-выгрузку. Операция расходует квоту и намеренно не повторяется."""
+    if not dates or not paths:
+        raise BambooError("Для расширенной выгрузки нужны хотя бы одна дата и один URL-путь")
+    if len(paths) > 100:
+        raise BambooError("Яндекс: за один запрос допускается не более 100 URL-путей")
+    normalized_dates = []
+    for value in dates:
+        normalized_dates.append(date.fromisoformat(value).isoformat())
+    normalized_paths = []
+    for value in paths:
+        if not isinstance(value, str) or not value.startswith("/") or "://" in value or any(ord(x) < 32 for x in value):
+            raise BambooError("Яндекс: path должен быть относительным URL-путём, начинающимся с /")
+        normalized_paths.append(value)
+    regions = region_ids or []
+    if any(isinstance(x, bool) or not isinstance(x, int) or x <= 0 for x in regions):
+        raise BambooError("Яндекс: region-id должен быть положительным целым")
+    base, headers = _yandex_connection(root)
+    result = request(base + "/pro/serp/queries/download/", payload={
+        "dates": normalized_dates, "paths": normalized_paths, "region_ids": regions,
+        "use_pro_tariff": "true" if use_pro else "false"}, headers=headers)
+    task_id = result.get("task_id")
+    try:
+        uuid.UUID(str(task_id))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise BambooError("Яндекс не вернул корректный task_id") from exc
+    record = {"task_id": str(task_id), "created_at": now(), "dates": normalized_dates,
+              "paths": normalized_paths, "region_ids": regions, "use_pro": use_pro,
+              "quota": {k: result.get(k) for k in ("free_quota_used", "pro_quota_used",
+                        "total_quota_used", "free_quota_remaining", "pro_quota_remaining")}}
+    write_json(safe(root, f"analytics/yandex-export-{task_id}.json"), record)
+    return record
+
+
+def yandex_export_status(root: Path, task_id: str) -> dict:
+    """Проверить асинхронную выгрузку. Не скачивает URL и не запускает polling."""
+    try:
+        task = str(uuid.UUID(str(task_id)))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise BambooError("Некорректный task_id Яндекса") from exc
+    base, headers = _yandex_connection(root)
+    result = request(base + "/pro/serp/queries/download/" + quote(task, safe=""), headers=headers, readonly=True)
+    status = result.get("download_status")
+    if status not in ("IN_PROGRESS", "SUCCESS", "FAILED"):
+        raise BambooError("Яндекс: неизвестный статус расширенной выгрузки")
+    output = {"task_id": task, "download_status": status}
+    if status == "SUCCESS":
+        output["url"] = result.get("url")
+        output["note"] = "Ссылка временная. Скачайте CSV и импортируйте после проверки схемы; автоматического polling нет."
+    elif status == "FAILED":
+        output["error_code"] = result.get("error_code")
+        output["error_message"] = result.get("error_message")
+    write_json(safe(root, f"analytics/yandex-export-{task}-status.json"), {**output, "checked_at": now()})
+    return output
 
 
 def pull(root: Path, provider: str, start: str, end: str) -> dict:
