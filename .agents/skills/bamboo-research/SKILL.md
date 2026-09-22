@@ -1,6 +1,6 @@
 ---
 name: bamboo-research
-description: Источники и проверка фактов для чайной керамики Bamboo Pottery
+description: Проверяет источники, термины и факты чайной керамики Bamboo Pottery. Использовать для подтверждения утверждений; не использовать для публикации.
 ---
 
 # bamboo-research
