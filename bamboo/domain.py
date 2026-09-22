@@ -30,10 +30,23 @@ def _contains(text: str, alias: str) -> bool:
     return needle in source
 
 
+def _term_matches(text: str, term: dict) -> bool:
+    if any(_contains(text, alias) for alias in term.get("aliases", [])):
+        return True
+    source = text.casefold()
+    for pattern in term.get("patterns", []):
+        try:
+            if re.search(pattern, source, re.UNICODE | re.I):
+                return True
+        except re.error as exc:
+            raise BambooError(f"docs/domain.json: неверный regex для {term.get('id')}") from exc
+    return False
+
+
 def canonical_entities(text: str) -> list[str]:
     found = []
     for term in vocabulary()["terms"]:
-        if any(_contains(text, alias) for alias in term.get("aliases", [])):
+        if _term_matches(text, term):
             found.append(term["id"])
     return sorted(set(found))
 
@@ -55,8 +68,7 @@ def evidence_gaps(text: str, claim_texts: list[str]) -> list[dict]:
     for term in vocabulary()["terms"]:
         if term.get("requires_evidence") is not True:
             continue
-        aliases = term.get("aliases", [])
-        if any(_contains(text, alias) for alias in aliases) and not any(_contains(claims, alias) for alias in aliases):
+        if _term_matches(text, term) and not _term_matches(claims, term):
             gaps.append({"term": term["id"], "preferred_ru": term["preferred_ru"],
                          "message": f"Утверждение «{term['preferred_ru']}» требует связанного claim/источника именно об этом свойстве"})
     return gaps
