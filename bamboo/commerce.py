@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from .core import BambooError, read_json, safe, slug, write_json
+from .core import BambooError, config, read_json, safe, slug, write_json
 from .quality import http_url
 
 PAGE_TYPES = {"product", "category", "article", "technique", "term", "social"}
@@ -38,7 +39,9 @@ def page_index(root: Path) -> dict[str, dict]:
 
 def build_graph(root: Path) -> dict:
     products, collections, jobs = {}, {}, {}
-    warnings, edges, suggestions = [], [], []
+    warnings, edges, suggestions, structured = [], [], [], []
+    site_url = config(root).get("site_url")
+    site_host = urlsplit(site_url).hostname if site_url else None
 
     product_dir = safe(root, "content/products")
     for path in _json_files(product_dir):
@@ -54,6 +57,24 @@ def build_graph(root: Path) -> dict:
                              "message": "Подтверждённый товар не имеет product_url; SEO/CTA-связь ограничена"})
         if obj.get("product_url"):
             http_url(obj["product_url"])
+            product_host = urlsplit(obj["product_url"]).hostname
+            required = {
+                "name": obj.get("name"),
+                "image": obj.get("photo_set"),
+                "offers.price": obj.get("price"),
+                "offers.priceCurrency": obj.get("currency"),
+                "offers.availability": obj.get("availability")
+            }
+            missing = [key for key, value in required.items() if value in (None, "", [])]
+            structured.append({
+                "product_id": pid,
+                "product_url": obj["product_url"],
+                "same_site_purchase_page": bool(site_host and product_host == site_host),
+                "merchant_listing_candidate": bool(site_host and product_host == site_host and not missing),
+                "missing_required_fields": missing,
+                "note": ("Product/Offer разметку допустимо генерировать только на собственной странице покупки; "
+                         "внешняя карточка ВК/магазина не размечается на статье Bamboo.")
+            })
 
     collection_dir = safe(root, "content/collections")
     if collection_dir.exists():
@@ -131,6 +152,7 @@ def build_graph(root: Path) -> dict:
     result = {"schema_version": 1,
               "nodes": {"products": sorted(products), "collections": sorted(collections), "jobs": sorted(jobs)},
               "jobs": jobs, "edges": edges, "clusters": dict(clusters),
-              "internal_link_suggestions": suggestions, "warnings": warnings}
+              "internal_link_suggestions": suggestions,
+              "structured_data_candidates": structured, "warnings": warnings}
     write_json(safe(root, "content/commerce-graph.json"), result)
     return result
