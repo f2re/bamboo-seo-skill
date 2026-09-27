@@ -11,6 +11,7 @@ from pathlib import Path
 
 from . import __version__
 from . import analytics, commerce, publishing, quality
+from .advice import readiness_text, workspace_readiness
 from .core import (BambooError, approval_token, config, file_digest, init, job_path,
                    lock, new_job, read_json, safe, snapshot)
 from .install import SYSTEMS, install, uninstall
@@ -22,12 +23,13 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="Создать локальные данные без перезаписи")
-    sub.add_parser("doctor", help="Проверить среду без сети и вывода секретов")
+    d = sub.add_parser("doctor", help="Готовность проекта и следующие шаги без сети")
+    d.add_argument("--text", action="store_true", help="Показать краткий читаемый отчёт вместо JSON")
     n = sub.add_parser("new", help="Создать незаполненное задание")
     n.add_argument("slug")
     n.add_argument("--topic", required=True)
     n.add_argument("--audience", choices=["A", "B", "C", "mixed"], default="A")
-    n.add_argument("--formats", default="article,vk,card,stories")
+    n.add_argument("--formats", default="vk")
     n.add_argument("--products", default="")
     for name in ("validate", "status", "review-template", "export", "wp-reconcile"):
         sub.add_parser(name).add_argument("slug")
@@ -52,7 +54,7 @@ def parser() -> argparse.ArgumentParser:
     a.add_argument("--start", required=True)
     a.add_argument("--end", required=True)
     a = sub.add_parser("analytics-report")
-    a.add_argument("--end", default=date.today().isoformat())
+    a.add_argument("--end", help="По умолчанию последняя дата сохранённых наблюдений")
     a.add_argument("--days", type=int, default=7)
     sub.add_parser("analytics-yandex-export-dates", help="Показать доступные даты расширенной Яндекс URL×query выгрузки")
     a = sub.add_parser("analytics-yandex-export-start", help="Явно запустить квотируемую расширенную Яндекс URL×query выгрузку")
@@ -72,7 +74,7 @@ def parser() -> argparse.ArgumentParser:
 
 
 def doctor(root: Path) -> dict:
-    return {"version": __version__, "python": sys.version.split()[0],
+    return {"readiness": workspace_readiness(root), "version": __version__, "python": sys.version.split()[0],
             "workspace": str(root), "config_exists": safe(root, "bamboo.json").exists(),
             "runtime_executables": {n: bool(shutil.which(n)) for n in ("codex", "claude", "antigravity")},
             "native_directories": {n: safe(root, n).is_dir() for n in
@@ -161,7 +163,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         result = dispatch(args)
-        print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
+        if args.command == "doctor" and args.text:
+            print(readiness_text(result))
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
         return 1 if result.get("ok") is False else 0
     except (BambooError, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         # Не показывать тела HTTP-ответов, токены и трассировки.

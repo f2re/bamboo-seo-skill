@@ -13,8 +13,9 @@ from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
+from .advice import content_opportunities
 from .commerce import page_index
-from .core import BambooError, config, now, safe, write_json, write_text
+from .core import BambooError, config, file_digest, now, safe, write_json, write_text
 from .domain import canonical_entities, query_cluster_key
 from .net import request, secret
 from .quality import http_url
@@ -58,7 +59,8 @@ def connect(root: Path) -> sqlite3.Connection:
 
 def normalize(row: dict) -> dict:
     result = {k: row.get(k) for k in FIELDS}
-    date.fromisoformat(str(result["date"]))
+    if not isinstance(result["date"], str) or date.fromisoformat(result["date"]).isoformat() != result["date"]:
+        raise BambooError("Дата должна иметь вид YYYY-MM-DD")
     for key in ("source", "grain"):
         if not isinstance(result[key], str) or not result[key].strip():
             raise BambooError(f"CSV/API: пустое поле {key}")
@@ -66,6 +68,8 @@ def normalize(row: dict) -> dict:
         raise BambooError("grain должен быть page, page_query, query или conversion")
     result["page"] = result["page"] or ""
     result["query"] = result["query"] or ""
+    if not isinstance(result["page"], str) or not isinstance(result["query"], str):
+        raise BambooError("CSV/API: page и query должны быть строками")
     if result["grain"] in ("page", "conversion") and not result["page"].strip():
         raise BambooError(f"{result['grain']}: нужна страница")
     if result["grain"] == "page_query" and (not result["page"].strip() or not result["query"].strip()):
@@ -79,6 +83,8 @@ def normalize(row: dict) -> dict:
         if value in (None, ""):
             result[key] = None
         else:
+            if isinstance(value, bool):
+                raise BambooError(f"Недопустимое логическое значение {key}")
             val = float(value)
             if not math.isfinite(val) or val < 0:
                 raise BambooError(f"Недопустимое значение {key}")
@@ -86,19 +92,29 @@ def normalize(row: dict) -> dict:
     return result
 
 
+def _upsert(db: sqlite3.Connection, normalized: list[dict]) -> None:
+    # A site's QUERY observation has no page dimension. A changed URL hint must replace it.
+    for row in normalized:
+        if row["grain"] == "query":
+            db.execute("DELETE FROM metrics WHERE date=? AND source=? AND grain='query' AND query=?",
+                       (row["date"], row["source"], row["query"]))
+    placeholders = ",".join("?" for _ in FIELDS)
+    update = ",".join(f"{k}=excluded.{k}" for k in METRICS)
+    db.executemany(f"INSERT INTO metrics ({','.join(FIELDS)}) VALUES ({placeholders}) "
+                   f"ON CONFLICT(date,source,grain,page,query) DO UPDATE SET {update}",
+                   [tuple(row[k] for k in FIELDS) for row in normalized])
+
+
 def ingest(root: Path, rows: list[dict]) -> dict:
     normalized = [normalize(r) for r in rows]
-    keys = [tuple(r[k] for k in FIELDS[:5]) for r in normalized]
+    keys = [(r["date"], r["source"], r["grain"], "" if r["grain"] == "query" else r["page"], r["query"])
+            for r in normalized]
     if len(keys) != len(set(keys)):
-        raise BambooError("В одной выгрузке повторяется ключ date/source/grain/page/query")
+        raise BambooError("В одной выгрузке повторяется ключ наблюдения; URL-подсказка QUERY не является измерением")
     db = connect(root)
     try:
         with db:
-            placeholders = ",".join("?" for _ in FIELDS)
-            update = ",".join(f"{k}=excluded.{k}" for k in METRICS)
-            db.executemany(f"INSERT INTO metrics ({','.join(FIELDS)}) VALUES ({placeholders}) "
-                           f"ON CONFLICT(date,source,grain,page,query) DO UPDATE SET {update}",
-                           [tuple(row[k] for k in FIELDS) for row in normalized])
+            _upsert(db, normalized)
     finally:
         db.close()
     return {"rows_upserted": len(normalized), "note": "Повторная загрузка заменяет значения, а не складывает их"}
@@ -141,6 +157,8 @@ def import_yandex_enhanced_csv(root: Path, path: Path) -> dict:
         reader = csv.DictReader(handle, dialect=dialect)
         fields = reader.fieldnames or []
         normalized_headers = {_header_key(x): x for x in fields}
+        if len(normalized_headers) != len(fields):
+            raise BambooError("Яндекс CSV: повтор заголовка столбца")
         mapping = {}
         for canonical, aliases in YANDEX_EXPORT_HEADERS.items():
             hits = [normalized_headers[a] for a in aliases if a in normalized_headers]
@@ -150,6 +168,8 @@ def import_yandex_enhanced_csv(root: Path, path: Path) -> dict:
 
         raw = []
         for number, row in enumerate(reader, 2):
+            if None in row or any(row.get(mapping[k]) is None for k in mapping):
+                raise BambooError(f"Яндекс CSV:{number}: число колонок не соответствует заголовку")
             day = str(row[mapping["date"]]).strip()
             date.fromisoformat(day)
             host = str(row[mapping["host"]]).strip()
@@ -178,32 +198,31 @@ def import_yandex_enhanced_csv(root: Path, path: Path) -> dict:
                 "clicks=excluded.clicks,impressions=excluded.impressions,position=excluded.position",
                 [(r["date"], r["host"], r["page"], r["query"], r["region"], r["clicks"], r["impressions"], r["position"])
                  for r in raw])
-        stored = []
-        for day, page, query in affected:
-            stored.extend(dict(x) for x in db.execute(
-                "SELECT * FROM yandex_enhanced WHERE date=? AND page=? AND query=?", (day, page, query)))
+            metrics = []
+            for day, page, query in affected:
+                items = [dict(x) for x in db.execute(
+                    "SELECT * FROM yandex_enhanced WHERE date=? AND page=? AND query=?", (day, page, query))]
+                if len({x["host"] for x in items}) > 1:
+                    raise BambooError("Яндекс CSV: один URL имеет разные значения host; агрегация неоднозначна")
+                regions = {x["region"] for x in items}
+                if "" in regions and len(regions) > 1:
+                    raise BambooError("Яндекс CSV: нельзя смешивать пустой регион с региональной детализацией")
+                impressions = sum(x["impressions"] for x in items)
+                clicks = sum(x["clicks"] for x in items)
+                weighted = [x for x in items if x["position"] is not None and x["impressions"] > 0]
+                position = (sum(x["position"] * x["impressions"] for x in weighted) /
+                            sum(x["impressions"] for x in weighted)) if weighted else None
+                metrics.append(normalize({"date": day, "source": "yandex_enhanced", "grain": "page_query",
+                                          "page": page, "query": query, "impressions": impressions,
+                                          "clicks": clicks, "position": position}))
+            # Raw rows and their derived aggregates commit or roll back together.
+            _upsert(db, metrics)
     finally:
         db.close()
-
-    grouped = defaultdict(list)
-    for row in stored:
-        grouped[(row["date"], row["page"], row["query"])].append(row)
-    metrics = []
-    for (day, page, query), items in grouped.items():
-        impressions = sum(x["impressions"] for x in items)
-        clicks = sum(x["clicks"] for x in items)
-        weighted = [x for x in items if x["position"] is not None and x["impressions"] > 0]
-        known_positions = [x["position"] for x in items if x["position"] is not None]
-        position = (sum(x["position"] * x["impressions"] for x in weighted) / sum(x["impressions"] for x in weighted)
-                    if weighted else (sum(known_positions) / len(known_positions) if known_positions else None))
-        metrics.append(normalize({"date": day, "source": "yandex_enhanced", "grain": "page_query",
-                                  "page": page, "query": query, "impressions": impressions,
-                                  "clicks": clicks, "position": position}))
-    imported = ingest(root, metrics)
-    result = {"raw_rows": len(raw), "page_query_rows": imported["rows_upserted"],
-              "source": "yandex_enhanced",
-              "note": "Региональные строки сохранены отдельно; metrics содержит агрегат date×URL×query без двойного счёта."}
-    write_json(safe(root, "analytics/yandex-enhanced-import.json"), {**result, "file": path.name, "imported_at": now()})
+    result = {"raw_rows": len(raw), "page_query_rows": len(metrics), "source": "yandex_enhanced",
+              "note": "Региональные строки и агрегаты записаны одной транзакцией. Охват ограничен импортированными регионами; это не итог по всем регионам."}
+    write_json(safe(root, "analytics/yandex-enhanced-import.json"),
+               {**result, "file": path.name, "sha256": file_digest(path), "imported_at": now()})
     return result
 
 
@@ -381,15 +400,18 @@ def pull(root: Path, provider: str, start: str, end: str) -> dict:
 
 
 def summarize(rows: list[dict]) -> dict:
-    out = {}
+    out = {"metric_coverage": {}}
     for metric in METRICS:
-        if metric == "position":
-            continue
-        vals = [r[metric] for r in rows if r[metric] is not None]
-        out[metric] = sum(vals) if vals else None
+        measured = [r for r in rows if r.get(metric) is not None]
+        dates = sorted({r["date"] for r in measured})
+        out["metric_coverage"][metric] = {"rows": len(measured), "total_rows": len(rows),
+                                           "dates": dates, "complete": bool(rows) and len(measured) == len(rows)}
+        if metric != "position":
+            out[metric] = sum(r[metric] for r in measured) if measured else None
     valid = [r for r in rows if r["position"] is not None and r["impressions"] is not None and r["impressions"] > 0]
     out["position"] = sum(r["position"] * r["impressions"] for r in valid) / sum(r["impressions"] for r in valid) if valid else None
-    out["ctr"] = out["clicks"] / out["impressions"] if out["clicks"] is not None and out["impressions"] else None
+    paired = all(out["metric_coverage"][k]["complete"] for k in ("clicks", "impressions"))
+    out["ctr"] = out["clicks"] / out["impressions"] if paired and out["impressions"] else None
     out["observed_days"] = len({r["date"] for r in rows})
     return out
 
@@ -466,23 +488,26 @@ def _query_records(rows: list[dict], current_start: date, minimum: float) -> lis
 def _query_clusters(records: list[dict]) -> list[dict]:
     groups = defaultdict(list)
     for item in records:
-        groups[(item["source"], item["intent_hint"], item["cluster_hint"])].append(item)
+        groups[(item["source"], item["grain"], item["intent_hint"], item["cluster_hint"])].append(item)
     result = []
-    for (source, intent, cluster), items in groups.items():
-        impressions = sum((x["current"]["impressions"] or 0) for x in items)
-        clicks = sum((x["current"]["clicks"] or 0) for x in items)
+    for (source, grain, intent, cluster), items in groups.items():
+        observations = [x["current"]["impressions"] for x in items if x["current"]["impressions"] is not None]
+        click_values = [x["current"]["clicks"] for x in items if x["current"]["clicks"] is not None]
+        impressions = sum(observations) if observations else None
+        clicks = sum(click_values) if click_values else None
+        paired = all(x["current"]["metric_coverage"][k]["complete"] for x in items for k in ("clicks", "impressions"))
         weighted = [(x["current"]["position"], x["current"]["impressions"])
                     for x in items if x["current"]["position"] is not None and (x["current"]["impressions"] or 0) > 0]
         position = (sum(p * imp for p, imp in weighted) / sum(imp for _, imp in weighted)) if weighted else None
         pages = sorted({x["page"] for x in items if x["page"]})
         hints = sorted({x["page_hint"] for x in items if x["page_hint"]})
         queries = sorted(items, key=lambda x: x["current"]["impressions"] or 0, reverse=True)[:10]
-        result.append({"source": source, "intent_hint": intent, "cluster_hint": cluster, "impressions": impressions,
-                       "clicks": clicks, "ctr": clicks / impressions if impressions else None,
+        result.append({"source": source, "grain": grain, "intent_hint": intent, "cluster_hint": cluster, "impressions": impressions,
+                       "clicks": clicks, "ctr": clicks / impressions if paired and impressions else None,
                        "position": position, "pages": pages, "page_hints": hints,
                        "queries": [{"query": x["query"], "impressions": x["current"]["impressions"],
                                     "clicks": x["current"]["clicks"]} for x in queries]})
-    return sorted(result, key=lambda x: x["impressions"], reverse=True)
+    return sorted(result, key=lambda x: x["impressions"] or 0, reverse=True)
 
 
 def _cannibalization_candidates(rows: list[dict], current_start: date, minimum: float) -> list[dict]:
@@ -525,7 +550,7 @@ def _intent_mismatch_candidates(root: Path, records: list[dict], minimum: float)
                            "intent_hint": intent, "page_type": page_type,
                            "impressions": item["current"]["impressions"], "reason": reason,
                            "note": "Кандидат на ручную SERP/страничную проверку, не автоматический дефект."})
-    return sorted(result, key=lambda x: x["impressions"], reverse=True)
+    return sorted(result, key=lambda x: x["impressions"] or 0, reverse=True)
 
 
 def _conversion_records(rows: list[dict], current_start: date) -> list[dict]:
@@ -550,32 +575,62 @@ def _funnels(pages: list[dict], conversions: list[dict]) -> list[dict]:
     for conversion in conversions:
         key = (conversion["source"], conversion["page"])
         page = search.get(key)
-        if not page:
+        if not page or not page["current"]["clicks"]:
             continue
-        clicks = page["current"]["clicks"]
         cur = conversion["current"]
-        if not clicks:
+        click_data = page["current"]["metric_coverage"]["clicks"]
+        if not click_data["complete"]:
             continue
-        result.append({"source": key[0], "page": key[1], "search_clicks": clicks,
-                       "product_click_rate": cur["product_clicks"] / clicks if cur["product_clicks"] is not None else None,
-                       "lead_rate": cur["leads"] / clicks if cur["leads"] is not None else None,
-                       "order_rate": cur["orders"] / clicks if cur["orders"] is not None else None,
-                       "note": "Воронка рассчитана только потому, что conversion.source совпадает с источником поисковой страницы."})
+        rates = {}
+        for metric, label in (("product_clicks", "product_click_rate"), ("leads", "lead_rate"), ("orders", "order_rate")):
+            coverage = cur["metric_coverage"][metric]
+            matched = coverage["complete"] and coverage["dates"] == click_data["dates"]
+            rates[label] = cur[metric] / page["current"]["clicks"] if matched else None
+        if any(v is not None for v in rates.values()):
+            result.append({"source": key[0], "page": key[1], "search_clicks": page["current"]["clicks"], **rates,
+                "observed_dates": click_data["dates"],
+                "note": "Отношения событий за одинаковые измеренные даты и явно указанный source. Не когортная конверсия и не доказательство причинности; повторные события могут дать отношение выше 1."})
     return result
 
 
-def report(root: Path, end: str, days: int = 7) -> dict:
+def _read_metrics(root: Path) -> list[dict]:
+    path = safe(root, "analytics/metrics.sqlite3")
+    if not path.exists():
+        return []
+    try:
+        db = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
+        db.row_factory = sqlite3.Row
+        try:
+            return [dict(r) for r in db.execute("SELECT * FROM metrics ORDER BY date,source,grain,page,query")]
+        finally:
+            db.close()
+    except sqlite3.Error as exc:
+        raise BambooError("Не читается база аналитики; сохраните резервную копию и восстановите исходную выгрузку") from exc
+
+
+def report(root: Path, end: str | None = None, days: int = 7) -> dict:
     if not 1 <= days <= 366:
         raise BambooError("Длина периода: 1–366 дней")
-    last = date.fromisoformat(end)
+    all_rows = _read_metrics(root)
+    selected_end = end or max((r["date"] for r in all_rows), default=date.today().isoformat())
+    last = date.fromisoformat(selected_end)
+    end = last.isoformat()
     current_start = last - timedelta(days=days - 1)
     previous_start = current_start - timedelta(days=days)
-    db = connect(root)
-    try:
-        rows = [dict(r) for r in db.execute("SELECT * FROM metrics WHERE date BETWEEN ? AND ?",
-                                           (previous_start.isoformat(), end))]
-    finally:
-        db.close()
+    rows = [r for r in all_rows if previous_start.isoformat() <= r["date"] <= end]
+    # Old v1.1 QUERY rows may differ only in page_hint. Do not choose a winner silently.
+    query_keys = defaultdict(list)
+    for r in rows:
+        if r["grain"] == "query":
+            query_keys[(r["source"], r["date"], r["query"])].append(r)
+    ambiguous = {key for key, values in query_keys.items() if len(values) > 1}
+    rows = [r for r in rows if r["grain"] != "query" or (r["source"], r["date"], r["query"]) not in ambiguous]
+    warnings = []
+    if ambiguous:
+        warnings.append("Найдены старые QUERY-дубли по URL-подсказкам. Они исключены из отчёта; повторно загрузите затронутый период Яндекса.")
+    latest = {source: max(r["date"] for r in all_rows if r["source"] == source) for source in {r["source"] for r in all_rows}}
+    if latest and max(latest.values()) < date.today().isoformat():
+        warnings.append("Отчёт построен по сохранённым наблюдениям, не по онлайн-данным на сегодня. Проверяйте latest_dates.")
 
     minimum = config(root)["analytics"].get("min_impressions", 100)
     page_groups = defaultdict(list)
@@ -589,7 +644,8 @@ def report(root: Path, end: str, days: int = 7) -> dict:
         cur, prev = summarize(current), summarize(previous)
         enough = cur["observed_days"] >= max(1, days // 2) and (cur["impressions"] or 0) >= minimum
         old, new = prev["clicks"], cur["clicks"]
-        comparable = cur["observed_days"] == days and prev["observed_days"] == days
+        comparable = (cur["observed_days"] == days and prev["observed_days"] == days and
+                      cur["metric_coverage"]["clicks"]["complete"] and prev["metric_coverage"]["clicks"]["complete"])
         change = (new - old) / old if comparable and old and new is not None else None
         pages.append({"source": source, "grain": "page", "page": page, "current": cur, "previous": prev,
                       "click_change_fraction": change, "suggestion": _page_suggestion(cur, enough)})
@@ -605,6 +661,9 @@ def report(root: Path, end: str, days: int = 7) -> dict:
     output = {
         "current": [current_start.isoformat(), end],
         "previous": [previous_start.isoformat(), (current_start - timedelta(days=1)).isoformat()],
+        "latest_dates": latest, "warnings": warnings, "excluded_ambiguous_queries": len(ambiguous),
+        "generated_at": now(),
+        "coverage_note": "Суммы относятся к сохранённым наблюдениям. metric_coverage показывает пропуски по каждому показателю; наличие строки за день не доказывает полноту API.",
         "pages": pages, "queries": queries,
         "query_count_total": len(all_queries), "query_count_returned": len(queries),
         "query_clusters": clusters,
@@ -615,9 +674,17 @@ def report(root: Path, end: str, days: int = 7) -> dict:
                    "Яндекс grain=query не является query×page; yandex_enhanced является точным URL×query. "
                    "Все mismatch/cannibalization — кандидаты на проверку, не автоматические решения.")
     }
+    output["opportunities"] = content_opportunities(root, output, all_queries, minimum)
     write_json(safe(root, "analytics/report.json"), output)
 
-    lines = ["# Отчёт Bamboo Pottery", f"\nПериод: {current_start} — {end}", "\n" + output["policy"]]
+    lines = ["# Отчёт Bamboo Pottery", f"\nПериод: {current_start} — {end}", "\n" + output["coverage_note"], *warnings,
+             "\n## Следующие действия", output["opportunities"]["message"]]
+    for action in output["opportunities"]["actions"]:
+        evidence = action["evidence"]
+        lines += ["\n### " + action["action"], action["reason"],
+                  f"Основание: {evidence['source']} / {evidence['grain']}; запрос «{evidence['query']}»; {evidence['impressions']} показов.",
+                  "Страница: " + str(action["target_url"]), action["success_check"], action["stop_condition"]]
+    lines.append("\n" + output["policy"])
     for item in pages:
         lines += [f'\n## {item["page"]} ({item["source"]})',
                   f'Клики: {item["current"]["clicks"]}; показы: {item["current"]["impressions"]}; '

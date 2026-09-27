@@ -159,8 +159,22 @@ def export(root: Path, name: str) -> dict:
                          "urls": tracked},
             "note": "UTM-ссылки — предложения для измерения; существующие utm_* не перезаписываются. API ВК не вызывался."
         })
-    content = (body(root, name, urls) if "article" in pack["formats"] else
-               "".join(f"<h2>{fmt}</h2>" + markdown(v["text"]) + markdown(v["cta"]) for fmt, v in pack["formats"].items()))
+    # Human approval must cover EVERY selected channel, not only the article.
+    sections = []
+    for fmt, item in pack["formats"].items():
+        rendered = body(root, name, urls) if fmt == "article" else markdown(item["text"]) + markdown(item["cta"])
+        sections.append(f'<section data-format="{fmt}"><h2>{fmt}</h2>{rendered}</section>')
+    if "article" not in pack["formats"]:
+        for photo, url in zip(pack["photos"], urls):
+            sections.append(f'<figure><img src="{html.escape(url, quote=True)}" alt="{html.escape(photo["alt"], quote=True)}">'
+                            f'<figcaption>{html.escape(photo.get("caption", ""))}</figcaption></figure>')
+    content = "\n".join(sections)
+    # Remove only obsolete toolkit-generated channel files; never touch original media.
+    for fmt in ("article", "vk", "card", "stories", "carousel", "faq"):
+        if fmt not in pack["formats"]:
+            safe(dest, f"{fmt}.txt").unlink(missing_ok=True)
+    if "vk" not in pack["formats"]:
+        safe(dest, "vk.json").unlink(missing_ok=True)
     write_text(dest / "preview.html", page(pack["title"], pack["description"], content))
     write_json(dest / "manifest.json", {"slug": name, "content_hash": snapshot(root, name), "draft": True,
                                                "created_at": now(), "product_ids": brief.get("product_ids", []),

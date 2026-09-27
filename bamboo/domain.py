@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-from functools import lru_cache
 from pathlib import Path
 
 from .core import BambooError, read_json
@@ -15,7 +14,6 @@ STOPWORDS = {
 }
 
 
-@lru_cache(maxsize=1)
 def vocabulary() -> dict:
     data = read_json(ENGINE / "docs" / "domain.json")
     if not isinstance(data, dict) or data.get("schema_version") != 1 or not isinstance(data.get("terms"), list):

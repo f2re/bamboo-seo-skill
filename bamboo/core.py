@@ -215,7 +215,7 @@ def snapshot(root: Path, name: str) -> str:
     engine = Path(__file__).resolve().parent.parent
     for folder in ("bamboo", "docs", "skills", "agents"):
         for path in sorted((engine / folder).rglob("*")):
-            if path.is_file() and path.suffix in (".py", ".md") and "__pycache__" not in path.parts:
+            if path.is_file() and path.suffix in (".py", ".md", ".json") and "__pycache__" not in path.parts:
                 hashes["engine/" + path.relative_to(engine).as_posix()] = file_digest(path)
     hashes["engine_version"] = __version__
     return digest(json.dumps(hashes, sort_keys=True).encode())
