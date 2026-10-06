@@ -70,6 +70,8 @@ def parser() -> argparse.ArgumentParser:
     a.add_argument("--dry-run", action="store_true")
     a = sub.add_parser("uninstall")
     a.add_argument("--dry-run", action="store_true")
+    from .vk.cli import add_parser
+    add_parser(sub)
     return p
 
 
@@ -88,6 +90,9 @@ def doctor(root: Path) -> dict:
 def dispatch(a: argparse.Namespace) -> dict:
     root = a.workspace.resolve()
     cmd = a.command
+    if cmd == "vk":
+        from .vk.cli import dispatch as vk_dispatch
+        return vk_dispatch(a)
     if cmd == "init":
         return init(root)
     if cmd == "doctor":
@@ -162,6 +167,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     args = parser().parse_args(argv)
     try:
+        if args.command == "vk" and args.vk_action == "mcp":
+            from .vk.mcp import serve
+            return serve(args.workspace)
         result = dispatch(args)
         if args.command == "doctor" and args.text:
             print(readiness_text(result))
