@@ -1,0 +1,13 @@
+{
+  "request": "УЧЕБНЫЙ ПРИМЕР: заменить фото, факты, цену и категорию данными владельца перед подтверждением",
+  "actions": [
+    {"operation": "photo.product", "params": {"file": "content/media/cup.jpg", "main_photo": true}},
+    {"operation": "product.create", "params": {
+      "name": "Название из паспорта изделия",
+      "description": "Подтверждённое владельцем описание изделия.",
+      "category_id": 100,
+      "price": "2700.00",
+      "main_photo_id": "$0.photo_id"
+    }}
+  ]
+}
