@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 from .core import (BambooError, CHECKS, FORMATS, approval_token, config, file_digest,
                    job_path, now, read_json, safe, slug, snapshot, write_json)
 from .domain import evidence_gaps
+from .presentation import inspect_style, layout_findings
 
 CLICHES = ("непревзойдённое мастерство", "шедевр эпохи", "истинные ценители прекрасного",
            "воплощение древней мудрости", "энергия глины")
@@ -178,7 +179,11 @@ def validate(root: Path, name: str) -> dict:
                 msg = issue("error" if cfg["quality"].get("strict_lengths") else "warning", "length",
                             f"{fmt}: {lengths}; ориентир {lower}–{upper} ({mode})")
                 (errors if msg["level"] == "error" else warnings).append(msg)
+            for finding in inspect_style(fmt, full, item.get("style"))["findings"]:
+                (errors if finding["level"] == "error" else warnings).append(finding)
             all_public += [text, cta]
+        for finding in layout_findings(pack):
+            errors.append(finding)
         photographed = set()
         for photo in pack.get("photos", []):
             path = safe(root, photo["path"])
@@ -253,11 +258,16 @@ def approve(root: Path, name: str, confirmation: str) -> dict:
     return data
 
 
-def require_approval(root: Path, name: str) -> dict:
+def require_approval(root: Path, name: str, channel: str | None = None) -> dict:
     report = validate(root, name)
     if not report["ok"]:
         raise BambooError("Контент не прошёл validate")
     job = job_path(root, name)
+    if channel and (job / "authorization.json").exists():
+        authorization = read_json(job / "authorization.json")
+        if authorization.get("channel") == channel:
+            from .authorization import require_authorization
+            return require_authorization(root, name, channel)
     data = read_json(job / "approval.json")
     if data.get("content_hash") != snapshot(root, name) or data.get("review_hash") != file_digest(job / "review.json"):
         raise BambooError("После утверждения изменились текст, факты, фото, правила или рецензия")

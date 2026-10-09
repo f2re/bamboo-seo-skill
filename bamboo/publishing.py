@@ -16,38 +16,11 @@ from .net import request, secret
 from .quality import clean, http_url, require_approval, validate
 
 
-def inline(text: str) -> str:
-    """Малое явное подмножество Markdown; произвольный HTML не исполняется."""
-    def link(match):
-        try:
-            url = http_url(match.group(2))
-        except BambooError:
-            return html.escape(match.group(1))
-        return f'<a href="{html.escape(url, quote=True)}">{html.escape(match.group(1))}</a>'
-    parts = re.split(r"(\[[^\]\n]+\]\(https?://[^\s)]+\))", text)
-    result = []
-    for part in parts:
-        match = re.fullmatch(r"\[([^\]]+)\]\(([^)]+)\)", part)
-        result.append(link(match) if match else html.escape(part))
-    return "".join(result)
+from .presentation import inline, markdown as _markdown, blocks, vk_plain
 
 
 def markdown(text: str) -> str:
-    result = []
-    for block in re.split(r"\n\s*\n", clean(text)):
-        if not block.strip():
-            continue
-        if re.match(r"^#{1,6} ", block):
-            head, _, rest = block.partition("\n")
-            level = min(6, max(2, len(head) - len(head.lstrip("#"))))
-            result.append(f"<h{level}>{inline(head.lstrip('#').strip())}</h{level}>")
-            if rest:
-                result.append("<p>" + inline(rest).replace("\n", "<br>") + "</p>")
-        elif all(line.startswith("- ") for line in block.splitlines()):
-            result.append("<ul>" + "".join("<li>" + inline(line[2:]) + "</li>" for line in block.splitlines()) + "</ul>")
-        else:
-            result.append("<p>" + inline(block).replace("\n", "<br>") + "</p>")
-    return "\n".join(result)
+    return _markdown(clean(text))
 
 
 def body(root: Path, name: str, photo_urls: list[str] | None = None) -> str:
@@ -56,11 +29,19 @@ def body(root: Path, name: str, photo_urls: list[str] | None = None) -> str:
     if "article" not in pack["formats"]:
         raise BambooError("Для публикации на сайте требуется формат article")
     article = pack["formats"]["article"]
-    text = markdown(article["text"]) + markdown(article["cta"])
+    chunks = blocks(clean(article["text"]))
+    figures = {}
     for photo, url in zip(pack["photos"], photo_urls or []):
-        text += (f'<figure><img loading="lazy" src="{html.escape(url, quote=True)}" '
-                 f'alt="{html.escape(photo["alt"], quote=True)}">'
-                 f'<figcaption>{html.escape(photo.get("caption", ""))}</figcaption></figure>')
+        position = photo.get("after_block", len(chunks))
+        figure = (f'<figure><img loading="lazy" src="{html.escape(url, quote=True)}" '
+                  f'alt="{html.escape(photo["alt"], quote=True)}">'
+                  f'<figcaption>{html.escape(photo.get("caption", ""))}</figcaption></figure>')
+        figures.setdefault(position, []).append(figure)
+    parts = list(figures.get(0, []))
+    for position, chunk in enumerate(chunks, 1):
+        parts.append(markdown(chunk))
+        parts.extend(figures.get(position, []))
+    text = "\n".join(parts) + markdown(article["cta"])
     used = set(article.get("claims", []))
     source_ids = {sid for c in read_json(job / "claims.json") if c["id"] in used for sid in c["source_ids"]}
     sources = [s for s in read_json(job / "sources.json") if s["id"] in source_ids]
@@ -98,7 +79,12 @@ def page(title: str, description: str, content: str, canonical: str | None = Non
     return (f'<!doctype html>\n<html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
             f'<title>{esc(title)}</title><meta name="description" content="{esc(description, quote=True)}">{head}'
             '<style>body{font:18px/1.65 system-ui,sans-serif;max-width:800px;margin:3rem auto;padding:0 1rem}'
-            'img{max-width:100%;height:auto}figcaption{font-size:.85em}nav{margin-bottom:2rem}</style>'
+            'img{max-width:100%;height:auto}figcaption{font-size:.85em;color:#555}nav{margin-bottom:2rem}'
+            'h1{line-height:1.15;font-size:clamp(1.8rem,5vw,2.7rem)}h2,h3{line-height:1.25;margin-top:2em}'
+            'p{margin:0 0 1em}blockquote{margin:1.5em 0;padding:.4em 1em;border-left:3px solid #777}'
+            'figure{margin:1.8em 0}hr{border:0;border-top:1px solid #ccc;margin:2em 0}'
+            'body{overflow-wrap:anywhere}.vk-post{white-space:pre-wrap;max-width:42ch;line-height:1.5}section+section{border-top:1px solid #ddd;margin-top:3em}'
+            '@media(max-width:480px){body{margin:1.2rem auto;font-size:17px}h1{font-size:1.9rem}}</style>'
             f'<body><nav>Bamboo Pottery{" · ЧЕРНОВИК" if draft else ""}</nav><main><h1>{esc(title)}</h1>{content}</main></body></html>')
 
 
@@ -131,8 +117,9 @@ def export(root: Path, name: str) -> dict:
         shutil.copyfile(source, target)
         urls.append(rel)
     for fmt, item in pack["formats"].items():
-        write_text(safe(dest, f"{fmt}.txt"), clean(item["text"]) + "\n\n" + clean(item["cta"]) + "\n")
-    photo_manifest = [{"file": url, "alt": p["alt"], "caption": p.get("caption", "")}
+        write_text(safe(dest, f"{fmt}.txt"), (vk_plain(clean(item["text"])) if fmt == "vk" else clean(item["text"])) + "\n\n" + (vk_plain(clean(item["cta"])) if fmt == "vk" else clean(item["cta"])) + "\n")
+    photo_manifest = [{"file": url, "alt": p["alt"], "caption": p.get("caption", ""),
+                       **({"after_block": p["after_block"]} if "after_block" in p else {})}
                       for p, url in zip(pack["photos"], urls)]
     write_json(dest / "photos.json", photo_manifest)
     products = []
@@ -150,7 +137,7 @@ def export(root: Path, name: str) -> dict:
                     "suggested_url": tracking_url(x["product_url"], name)}
                    for x in products if x.get("product_url")]
         write_json(dest / "vk.json", {
-            "text": clean(vk["text"]), "cta": clean(vk["cta"]),
+            "text": vk_plain(clean(vk["text"])), "cta": vk_plain(clean(vk["cta"])),
             "products": products, "photos": photo_manifest,
             "attachment_order": [x["file"] for x in photo_manifest],
             "catalog_items": [x["vk_product_id"] for x in products if x.get("vk_product_id") is not None],
@@ -162,7 +149,9 @@ def export(root: Path, name: str) -> dict:
     # Human approval must cover EVERY selected channel, not only the article.
     sections = []
     for fmt, item in pack["formats"].items():
-        rendered = body(root, name, urls) if fmt == "article" else markdown(item["text"]) + markdown(item["cta"])
+        rendered = body(root, name, urls) if fmt == "article" else (
+            "<div class=\"vk-post\">" + html.escape(vk_plain(clean(item["text"]) + "\n\n" + clean(item["cta"]))) + "</div>"
+            if fmt == "vk" else markdown(item["text"]) + markdown(item["cta"]))
         sections.append(f'<section data-format="{fmt}"><h2>{fmt}</h2>{rendered}</section>')
     if "article" not in pack["formats"]:
         for photo, url in zip(pack["photos"], urls):
@@ -183,7 +172,7 @@ def export(root: Path, name: str) -> dict:
 
 
 def publish_static(root: Path, name: str) -> dict:
-    require_approval(root, name)
+    require_approval(root, name, "static")
     base = http_url(config(root).get("site_url"), https_only=True).rstrip("/")
     exported = export(root, name)
     src = Path(exported["path"])
@@ -231,7 +220,7 @@ def wp_setup(root: Path) -> tuple[str, dict]:
 
 
 def publish_wordpress(root: Path, name: str, *, live: bool = False) -> dict:
-    require_approval(root, name)
+    require_approval(root, name, "wordpress")
     base, headers = wp_setup(root)
     job = job_path(root, name)
     ledger_path = job / "wordpress.json"

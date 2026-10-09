@@ -343,7 +343,7 @@ class InstallTests(unittest.TestCase):
         self.assertEqual({x for x in files if x.startswith('.agents/skills/')},expected)
         self.assertIn('.agents/skills/bamboo-vk-store/SKILL.md',files)
         self.assertIn('sandbox_mode = "read-only"',files['.codex/agents/bamboo-vk-reviewer.toml'])
-        self.assertIn('disable-model-invocation: true',files['.claude/skills/bamboo-publish/SKILL.md'])
+        self.assertNotIn('disable-model-invocation: true',files['.claude/skills/bamboo-publish/SKILL.md'])
         self.assertIn('sandbox_mode = "read-only"',files['.codex/agents/bamboo-editor.toml'])
         self.assertIn('commandExecutionPolicy: off',files['.agents/agents/bamboo-editor.md'])
         self.assertIn('model: inherit',files['.claude/agents/bamboo-editor.md'])

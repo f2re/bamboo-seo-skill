@@ -33,6 +33,12 @@ def parser() -> argparse.ArgumentParser:
     n.add_argument("--products", default="")
     for name in ("validate", "status", "review-template", "export", "wp-reconcile"):
         sub.add_parser(name).add_argument("slug")
+    for name in ("style-check",):
+        sub.add_parser(name).add_argument("slug")
+    a = sub.add_parser("authorize", help="Записать прямое поручение на материал и площадку без анкеты рецензии")
+    a.add_argument("slug")
+    a.add_argument("--channel", choices=["vk", "wordpress", "static"], required=True)
+    a.add_argument("--request", required=True)
     a = sub.add_parser("approve", help="Утвердить вручную проверенную конкретную версию")
     a.add_argument("slug")
     a.add_argument("--confirm", required=True, help="Полный токен slug@sha256 из status")
@@ -41,7 +47,8 @@ def parser() -> argparse.ArgumentParser:
     a.add_argument("--channel", choices=["static", "wordpress"], required=True)
     a.add_argument("--execute", action="store_true")
     a.add_argument("--live", action="store_true", help="WordPress publish вместо draft")
-    a.add_argument("--confirm", help="Обязателен для --live")
+    a.add_argument("--confirm", help="Токен ручного согласования; не нужен при --request")
+    a.add_argument("--request", help="Прямое поручение пользователя на публикацию этого материала")
     a = sub.add_parser("hash-file", help="SHA256 файла для паспорта фото")
     a.add_argument("path", type=Path)
     a = sub.add_parser("analytics-import")
@@ -108,6 +115,11 @@ def dispatch(a: argparse.Namespace) -> dict:
     if cmd == "new":
         return new_job(root, a.slug, a.topic, a.formats.split(","),
                        [x for x in a.products.split(",") if x], a.audience)
+    if cmd == "style-check":
+        from .presentation import inspect_style
+        pack = read_json(job_path(root, a.slug) / "pack.json")
+        formats = {fmt: inspect_style(fmt, quality.clean(item["text"] + "\n\n" + item["cta"]), item.get("style")) for fmt, item in pack["formats"].items()}
+        return {"ok": not any(f["level"] == "error" for v in formats.values() for f in v["findings"]), "formats": formats}
     if cmd == "validate":
         return quality.validate(root, a.slug)
     if cmd == "status":
@@ -116,8 +128,11 @@ def dispatch(a: argparse.Namespace) -> dict:
         if report["ok"]:
             result["confirmation_token"] = approval_token(root, a.slug)
             try:
-                quality.require_approval(root, a.slug)
+                auth_path = job_path(root, a.slug) / "authorization.json"
+                channel = read_json(auth_path).get("channel") if auth_path.exists() else None
+                approved = quality.require_approval(root, a.slug, channel)
                 result["approval"] = "current"
+                result["authorization_mode"] = approved.get("mode", "human_review")
             except BambooError:
                 result["approval"] = "missing_or_stale"
         return result
@@ -125,8 +140,11 @@ def dispatch(a: argparse.Namespace) -> dict:
         return {"dry_run": True, "channel": a.channel,
                 "target_status": "publish" if a.live else ("draft" if a.channel == "wordpress" else "built_locally"),
                 "validation": quality.validate(root, a.slug), "network_called": False,
-                "note": "Для выполнения нужны актуальное утверждение и --execute"}
+                "note": "Для выполнения: --execute и прямое --request либо ранее оформленное ручное согласование"}
     with lock(root):
+        if cmd == "authorize":
+            from .authorization import authorize
+            return authorize(root, a.slug, a.channel, a.request)
         if cmd == "review-template":
             return quality.review_template(root, a.slug)
         if cmd == "approve":
@@ -136,7 +154,10 @@ def dispatch(a: argparse.Namespace) -> dict:
         if cmd == "publish":
             if a.live and a.channel != "wordpress":
                 raise BambooError("--live применим только к WordPress")
-            if a.live and a.confirm != approval_token(root, a.slug):
+            if a.request:
+                from .authorization import authorize
+                authorize(root, a.slug, a.channel, a.request)
+            if a.live and not a.request and a.confirm != approval_token(root, a.slug):
                 raise BambooError("Для --live нужен --confirm с полным текущим токеном версии")
             return (publishing.publish_static(root, a.slug) if a.channel == "static" else
                     publishing.publish_wordpress(root, a.slug, live=a.live))
