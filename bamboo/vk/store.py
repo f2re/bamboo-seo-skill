@@ -198,29 +198,33 @@ class Store:
         value = response if entity == "store" else (items(response)[0] if items(response) else None)
         return stable(entity, value)
 
-    def approved_content(self, name):
+    def approved_content(self, name, fmt="vk"):
         from bamboo.core import BambooError, approval_token, job_path, read_json
         from bamboo.quality import clean, require_approval
         try:
             require_approval(self.root, name)
             pack = read_json(job_path(self.root, name) / "pack.json")
-            if "vk" not in pack["formats"]:
-                raise VKError("В утверждённом пакете отсутствует формат vk")
-            entry = pack["formats"]["vk"]
-            message = "\n\n".join(v for v in (clean(entry["text"]), clean(entry["cta"])) if v)
+            if fmt not in pack["formats"]:
+                raise VKError(f"В утверждённом пакете отсутствует формат {fmt}")
+            entry = pack["formats"][fmt]
+            title = clean(pack.get("title", "")) if fmt == "article" else ""
+            text = clean(entry["text"])
+            cta = clean(entry["cta"])
+            parts = [p for p in (title, text, cta) if p]
+            message = "\n\n".join(parts)
             return message, [p["path"] for p in pack["photos"]], approval_token(self.root, name)
         except BambooError as exc:
             raise VKError(str(exc)) from None
 
-    def plan_post(self, name, request, publish_date=None):
-        message, photos, _ = self.approved_content(name)
+    def plan_post(self, name, request, publish_date=None, fmt="vk"):
+        message, photos, _ = self.approved_content(name, fmt=fmt)
         if len(photos) > 10:
             raise VKError("VK допускает в этом сценарии до десяти вложений")
         actions = [{"operation": "photo.wall", "params": {"file": path}} for path in photos]
         params = {"message": message, "attachments": ["$" + str(i) + ".attachment" for i in range(len(photos))]}
         if publish_date is not None:
             params["publish_date"] = publish_date
-        actions.append({"operation": "post.create", "params": params, "content_job": name})
+        actions.append({"operation": "post.create", "params": params, "content_job": name, "content_format": fmt})
         return self.plan({"request": request, "actions": actions})
 
     def plan(self, request):
@@ -234,7 +238,7 @@ class Store:
         actions, targets = [], set()
         total_media = 0
         for index, action in enumerate(request["actions"]):
-            if not isinstance(action, dict) or set(action) - {"operation", "params", "content_job"} or "operation" not in action:
+            if not isinstance(action, dict) or set(action) - {"operation", "params", "content_job", "content_format"} or "operation" not in action:
                 raise VKError("Некорректная операция плана")
             name = action["operation"]
             params = validate(name, action.get("params", {}), references=True)
@@ -274,7 +278,8 @@ class Store:
                     raise VKError("Суммарно в плане допускается не более 50 МиБ фотографий")
                 normalized["media_sha256"] = hashlib.sha256(content).hexdigest()
             if action.get("content_job"):
-                message, photos, approval = self.approved_content(action["content_job"])
+                content_fmt = action.get("content_format", "vk")
+                message, photos, approval = self.approved_content(action["content_job"], fmt=content_fmt)
                 expected_photos = ["$" + str(i) + ".attachment" for i in range(index)]
                 if (name != "post.create" or params.get("message") != message
                         or params.get("attachments", []) != expected_photos
@@ -282,6 +287,8 @@ class Store:
                         or any(a["operation"] != "photo.wall" for a in actions)):
                     raise VKError("План публикации не совпадает с утверждённым пакетом; используйте vk plan-post")
                 normalized["content_job"] = action["content_job"]
+                if action.get("content_format"):
+                    normalized["content_format"] = action["content_format"]
                 normalized["content_approval"] = approval
             actions.append(normalized)
         payload = {"schema_version": 1, "id": uuid.uuid4().hex, "group_id": self.group_id,
@@ -345,6 +352,8 @@ class Store:
                 actual = after.get("title")
             elif key == "message":
                 actual = after.get("text")
+                if isinstance(actual, str):
+                    actual = re.sub(r"\[#alias\|[^|\]]+\|([^\]]+)\]", r"\1", actual)
             elif key in ("price", "old_price"):
                 price = after.get("price", {})
                 amount = price.get("amount" if key == "price" else "old_amount") if isinstance(price, dict) else None
@@ -412,7 +421,7 @@ class Store:
                     continue
                 validate(action["operation"], action["params"], references=True)
                 if action.get("content_job"):
-                    _, _, approval = self.approved_content(action["content_job"])
+                    _, _, approval = self.approved_content(action["content_job"], fmt=action.get("content_format", "vk"))
                     if approval != action["content_approval"]:
                         raise VKError("Контент-пакет изменился после подготовки плана")
                 if action["before"] is not None and self.current(action["operation"], action["params"]) != action["before"]:

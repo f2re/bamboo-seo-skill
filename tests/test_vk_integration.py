@@ -59,3 +59,19 @@ class EditorialVKTests(Fixture):
         responses = [json.loads(line) for line in result.stdout.splitlines()]
         self.assertEqual(len(responses), 2)
         self.assertIn("vk_apply", [t["name"] for t in responses[1]["result"]["tools"]])
+
+    def test_approved_pack_article_format_and_alias_normalization(self):
+        self.approved("article")
+        store = self.store()
+        plan = store.plan_post("example", "Опубликовать статью", fmt="article")
+        actions = plan["plan"]["actions"]
+        self.assertEqual(actions[-1]["operation"], "post.create")
+        self.assertEqual(actions[-1].get("content_format"), "article")
+        self.assertIn("Тестовая тема", actions[-1]["params"]["message"])
+        msg = actions[-1]["params"]["message"]
+        actions[-1]["params"]["message"] = msg + " https://vk.ru/market-1_2"
+        alias_msg = msg + " [#alias|vk.ru/market-1...|https://vk.ru/market-1_2]"
+        store.api.posts[999] = {"id": 999, "owner_id": -77, "text": alias_msg, "attachments": []}
+        result = store.verify("post.create", actions[-1]["params"], {"post_id": 999})
+        self.assertTrue(result["verified"])
+

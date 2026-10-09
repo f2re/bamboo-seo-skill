@@ -31,6 +31,7 @@ def add_parser(sub):
     command.add_argument("slug")
     command.add_argument("--request", required=True, help="Исходное поручение пользователя")
     command.add_argument("--publish-date", type=int)
+    command.add_argument("--format", choices=["vk", "article"], default="vk", dest="fmt", help="Формат контента: vk или article")
     for name in ("show", "reconcile"):
         actions.add_parser(name).add_argument("plan_id")
     command = actions.add_parser("apply", help="Без --execute ничего не отправляет")
@@ -81,7 +82,7 @@ def run(args):
     if action == "plan":
         return store.plan(read(safe(root, args.file)))
     if action == "plan-post":
-        return store.plan_post(args.slug, args.request, args.publish_date)
+        return store.plan_post(args.slug, args.request, args.publish_date, getattr(args, "fmt", "vk"))
     if action == "show":
         return store.show(args.plan_id)
     if action == "apply":
