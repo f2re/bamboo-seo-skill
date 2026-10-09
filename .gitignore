@@ -13,3 +13,4 @@ site/
 .bamboo-locks/
 .bamboo/
 *.zip
+.bamboo/vk/
