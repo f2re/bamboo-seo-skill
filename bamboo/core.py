@@ -13,7 +13,7 @@ from typing import Any, Iterator
 
 from . import __version__
 
-FORMATS = {"article": (800, 1500, "words"), "vk": (800, 1500, "chars"),
+FORMATS = {"article": (0, 1500, "words"), "vk": (0, 1800, "chars"),
            "card": (300, 500, "chars"), "stories": (30, 60, "lines"),
            "carousel": (0, 0, "none"), "faq": (0, 0, "none")}
 CHECKS = ("facts", "culture", "voice", "photos", "privacy", "clickbait", "cta")

@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 
+from bamboo.core import BambooError
 from . import auth
 from .common import VKError, config, dumps, local, loads, read, safe
 from .registry import REGISTRY
@@ -32,6 +33,11 @@ def add_parser(sub):
     command.add_argument("--request", required=True, help="Исходное поручение пользователя")
     command.add_argument("--publish-date", type=int)
     command.add_argument("--format", choices=["vk", "article"], default="vk", dest="fmt", help="Формат контента: vk или article")
+    command = actions.add_parser("publish", help="Опубликовать подготовленный пост по прямому поручению без повторной анкеты")
+    command.add_argument("slug")
+    command.add_argument("--request", required=True)
+    command.add_argument("--execute", action="store_true")
+    command.add_argument("--publish-date", type=int)
     for name in ("show", "reconcile"):
         actions.add_parser(name).add_argument("plan_id")
     command = actions.add_parser("apply", help="Без --execute ничего не отправляет")
@@ -83,6 +89,11 @@ def run(args):
         return store.plan(read(safe(root, args.file)))
     if action == "plan-post":
         return store.plan_post(args.slug, args.request, args.publish_date, getattr(args, "fmt", "vk"))
+    if action == "publish":
+        from bamboo.authorization import publish_vk
+        from bamboo.core import lock
+        with lock(root):
+            return publish_vk(store, args.slug, args.request, args.execute, args.publish_date)
     if action == "show":
         return store.show(args.plan_id)
     if action == "apply":
@@ -95,8 +106,8 @@ def run(args):
 def dispatch(args):
     try:
         return run(args)
-    except (VKError, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        text = str(exc) if isinstance(exc, VKError) else "Некорректные данные или файловая ошибка"
+    except (VKError, BambooError, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        text = str(exc) if isinstance(exc, (VKError, BambooError)) else "Некорректные данные или файловая ошибка"
         return {"ok": False, "error": text}
 
 

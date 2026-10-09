@@ -202,14 +202,15 @@ class Store:
         from bamboo.core import BambooError, approval_token, job_path, read_json
         from bamboo.quality import clean, require_approval
         try:
-            require_approval(self.root, name)
+            require_approval(self.root, name, "vk")
             pack = read_json(job_path(self.root, name) / "pack.json")
             if fmt not in pack["formats"]:
                 raise VKError(f"В утверждённом пакете отсутствует формат {fmt}")
             entry = pack["formats"][fmt]
             title = clean(pack.get("title", "")) if fmt == "article" else ""
-            text = clean(entry["text"])
-            cta = clean(entry["cta"])
+            from bamboo.presentation import vk_plain
+            text = vk_plain(clean(entry["text"]))
+            cta = vk_plain(clean(entry["cta"]))
             parts = [p for p in (title, text, cta) if p]
             message = "\n\n".join(parts)
             return message, [p["path"] for p in pack["photos"]], approval_token(self.root, name)
@@ -312,7 +313,7 @@ class Store:
         document = self.document(plan_id)
         return {"plan_id": plan_id, "confirmation": "vk:" + plan_id + ":" + document["hash"],
                 "plan": document["payload"], "network_called": False,
-                "note": "Подтверждает человек после просмотра before и params. Хеш фиксирует версию, но не доказывает личность."}
+                "note": "Хеш фиксирует версию. Прямое поручение на конкретную публикацию не требует повторного согласования; прочие изменения выполняются в указанном владельцем объёме."}
 
     def resolve(self, params, state):
         def one(value):
