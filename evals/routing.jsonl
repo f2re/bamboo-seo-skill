@@ -10,3 +10,6 @@
 {"id":"route-publish-02","prompt":"Собери локальный статический сайт из уже утверждённого материала","expected_skill":"bamboo-publish","forbidden_skills":[]}
 {"id":"route-analytics-01","prompt":"Разбери запросы Google Search Console и предложи одну проверяемую гипотезу","expected_skill":"bamboo-analytics","forbidden_skills":["bamboo-content"]}
 {"id":"route-analytics-02","prompt":"Что изменилось по запросам и URL в Яндекс Вебмастере за две недели?","expected_skill":"bamboo-analytics","forbidden_skills":["bamboo-publish"]}
+{"id":"route-reel-01","prompt":"Сделай Reels для Instagram из видео, где мастер вырезает чашу куринуки","expected_skill":"bamboo-reel","forbidden_skills":["bamboo-publish"]}
+{"id":"route-reel-02","prompt":"Придумай три хука и раскадровку ролика про открытие печи для инстаграма","expected_skill":"bamboo-reel","forbidden_skills":["bamboo-content"]}
+{"id":"route-reel-03","prompt":"Напиши пост ВК о том же ролике с открытием печи","expected_skill":"bamboo-content","forbidden_skills":["bamboo-reel"]}

@@ -15,7 +15,8 @@ from . import __version__
 
 FORMATS = {"article": (0, 1500, "words"), "vk": (0, 1800, "chars"),
            "card": (300, 500, "chars"), "stories": (30, 60, "lines"),
-           "carousel": (0, 0, "none"), "faq": (0, 0, "none")}
+           "carousel": (0, 0, "none"), "faq": (0, 0, "none"),
+           "reel": (0, 0, "none")}  # предел подписи и раскадровку проверяет bamboo/reels.py
 CHECKS = ("facts", "culture", "voice", "photos", "privacy", "clickbait", "cta")
 DEFAULTS = {
     "schema_version": 1, "brand": "Bamboo Pottery", "language": "ru",
@@ -180,10 +181,20 @@ def new_job(root: Path, name: str, topic: str, formats: list[str],
             "demand": {"status": "unknown", "evidence": []}, "created_at": now()})
         write_json(target / "sources.json", [])
         write_json(target / "claims.json", [])
+        def blank(fmt: str) -> dict:
+            item = {"text": "", "cta": "", "claims": []}
+            if fmt == "reel":
+                item.update(hook="", beats=[], footage=[], hashtags=[])
+            return item
         write_json(target / "pack.json", {
             "schema_version": 1, "title": topic, "description": "",
-            "formats": {fmt: {"text": "", "cta": "", "claims": []} for fmt in formats},
+            "formats": {fmt: blank(fmt) for fmt in formats},
             "photos": []})
+        if "reel" in formats:
+            (target / "raw").mkdir()
+            write_text(target / "raw" / "README.md",
+                       "Исходники ролика: собственная съёмка мастера, mp4/mov/m4v.\n"
+                       "Файлы не изменяются при монтаже; результат пишется в exports/<slug>/.\n")
         write_text(target / "research.md", "# Исследование\n\nНужны фактура мастера и проверяемые источники.\n")
         write_text(target / "variants.md", "# Варианты\n\nДо 3 вариантов запрошенного формата; не выдумывать факты.\n")
     return {"job": name, "path": str(target), "status": "brief"}
