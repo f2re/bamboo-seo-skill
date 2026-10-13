@@ -9,6 +9,7 @@ Instagram `@bamboopottery` — витрина процесса, продажи �
 | Что | Решение | Когда |
 |---|---|---|
 | Монтаж Reels | [kajisho5/ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill), локально, без ключей | сейчас |
+| Ролики из фото, плашки | HyperFrames (HTML → MP4) | сейчас |
 | Идеи, хуки, подписи | `bamboo-reel` (в этом репозитории) | сейчас |
 | Публикация и статистика | `adelaidasofia/instagram-mcp` (официальный Graph API) или Postiz | со 2-й недели, по желанию |
 | Обложки и текстовые карточки | Remotion + remotion-dev/skills | позже |
@@ -17,21 +18,41 @@ Instagram `@bamboopottery` — витрина процесса, продажи �
 Методику instagram-agent-skill берите как справочник; его скрипты рассчитаны на английский и
 на русском тексте работают неверно.
 
-## Монтаж
+## Монтаж и анимация
 
-Установка выполняется владельцем: проект не скачивает внешний код сам.
+| Инструмент | Для чего у Bamboo | Решение |
+|---|---|---|
+| [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) | обрезка живой съёмки, 9:16, громкость, `check.py --platform reels`, контактный лист | ставить |
+| [HyperFrames](https://github.com/heygen-com/hyperframes) | ролик из фото, плашки и хук-карточки на HTML/CSS/GSAP; GSAP и headless Chrome входят в него | ставить |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | забрать собственное видео сообщества ВК как исходник | ставить; скачивание — по разрешению на файл |
+| GSAP, Puppeteer | уже внутри HyperFrames | отдельно не ставить |
+| claude-video (watch) | просмотр готового ролика агентом | не нужен: хватает контактного листа ffmpeg-skill |
+| opus-sound-layer | CC0-звуки для роликов без живого звука | по желанию; свой звук приоритетнее |
+| auto-editor, mlx-whisper, parakeet-mlx, mlx-audio, pyannote-audio, librosa | паузы, речь, спикеры, доли музыки | не нужны: в роликах мастерской нет речи и чужой музыки |
+| ManimGX, Anatomy, three.js, OpenScreen | схемы, 3D, скринкасты | не нужны: бренд держится на живой съёмке |
+
+Установка выполняется владельцем: проект не скачивает внешний код сам. Нужны Node.js 22+ и FFmpeg.
+Для хук-карточек и субтитров в ffmpeg-skill FFmpeg должен содержать фильтры `drawtext` и `subtitles`
+(`npx ffmpeg-skill doctor` покажет, чего не хватает).
 
 ```bash
-ffmpeg -version && python3 --version
-npx ffmpeg-skill --project          # Claude Code
-npx ffmpeg-skill --dir ./.agents/skills   # Codex и Antigravity
+ffmpeg -version && python3 --version && node --version
+npx ffmpeg-skill --project                     # Claude Code
+npx ffmpeg-skill --dir ./.agents/skills        # Codex и Antigravity
 npx ffmpeg-skill doctor
+npx skills add heygen-com/hyperframes          # скиллы HyperFrames для агента
+npx hyperframes --help
+python3 -m pip install --user yt-dlp
 ```
 
-Исходники — в `content/jobs/<slug>/raw/`, результат — в `content/jobs/<slug>/out/`. Задание агенту:
+Внешние скиллы в git не коммитятся (`.gitignore`). Исходники — в `content/jobs/<slug>/raw/`,
+результат — в `content/jobs/<slug>/out/`. Задание агенту для живой съёмки:
 
 > Используй ffmpeg-skill: собери из raw/ ролик для Reels до 20 секунд по шаблону reels, хук-карточка
 > на первые 2 секунды, проверь `check.py --platform reels` и покажи контактный лист.
+
+Для ролика из фото: «Используй HyperFrames: 9:16, 30 кадров/с, фото из raw/ с медленным зумом,
+плашки из reel.md, затем проверь через ffmpeg-skill».
 
 ## Подготовка
 
