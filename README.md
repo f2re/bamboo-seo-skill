@@ -1,6 +1,6 @@
 # Bamboo SEO Skill
 
-Текущая версия: **1.3.0**.
+Текущая версия: **1.4.0**.
 
 Редакционный инструментарий Bamboo Pottery для **Codex, Claude Code и Google Antigravity**.
 Не фабрика SEO-страниц: фактура мастера и настоящие фотографии превращаются в проверяемый
@@ -60,6 +60,25 @@ python3 bamboo.py vk sync
 Платежи, личная переписка, заказы и смена владельца не реализованы.
 
 **[Настройка, поля приложения, работа с агентом, MCP и восстановление →](docs/VK_STORE.md)**
+
+## Reels для Instagram
+
+Навык `bamboo-reel` собирает ролик из собственной съёмки мастера: три хука, раскадровку по
+реальным файлам, текст на экране, подпись и до пяти хэштегов. validate проверяет текст на
+экране так же, как подпись: числа и техника — только из claims. Монтирует отдельно
+устанавливаемый [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill).
+
+```bash
+python bamboo.py new kurinuki-bowl --topic "Чаша из цельного блока" --formats reel
+# исходники мастера → content/jobs/kurinuki-bowl/raw/
+python bamboo.py validate kurinuki-bowl
+python bamboo.py export kurinuki-bowl
+python3 <ffmpeg-skill>/scripts/render.py exports/kurinuki-bowl/reel-project.json
+```
+
+Нет съёмки — навык вернёт список кадров, а не сценарий несуществующего видео. Instagram
+этот инструментарий не публикует: готовый `reel.mp4` и подпись `reel.txt` выкладывает владелец.
+**[Формулы хуков, поле reel, монтаж и публикация →](docs/REELS.md)**
 
 ## Простой рабочий сценарий
 
@@ -152,6 +171,7 @@ python bamboo.py uninstall
 | `bamboo-publish` | Превью, проверка разрешения и явная публикация |
 | `bamboo-analytics` | Импорт метрик, сравнение периодов, предложения изменений |
 | `bamboo-vk-store` | Управление магазином ВК: чтение, план, подтверждение, запись и сверка |
+| `bamboo-reel` | Reels для Instagram: хуки, раскадровка, подпись, проект монтажа для ffmpeg-skill |
 
 Шесть ролей: `bamboo-researcher`, `bamboo-factcheck`, `bamboo-editor`, `bamboo-seo`,
 `bamboo-analyst`, `bamboo-vk-reviewer`. Они работают на чтение и возвращают отчёты координатору.
@@ -252,7 +272,7 @@ CSV допускает подтверждённые переходы к това
 
 ```text
 AGENTS.md / CLAUDE.md / GEMINI.md   точки входа
-skills/                            7 канонических сценариев
+skills/                            8 канонических сценариев
 agents/                            6 канонических ролей
 .agents/skills/                     Codex + Antigravity
 .codex/agents/                      нативные TOML-роли Codex

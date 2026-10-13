@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 from .core import (BambooError, CHECKS, FORMATS, approval_token, config, file_digest,
                    job_path, now, read_json, safe, slug, snapshot, write_json)
+from . import reels
 from .domain import evidence_gaps
 from .presentation import inspect_style, layout_findings
 
@@ -153,24 +154,31 @@ def validate(root: Path, name: str) -> dict:
         used_claim_ids = set()
         for fmt, item in pack.get("formats", {}).items():
             text, cta = item["text"], item["cta"]
+            # Текст на экране ролика публичен так же, как подпись: те же факты и числа.
+            extra = (reels.onscreen(item) + "\n" + " ".join(t.lstrip("#") for t in reels.hashtags(item))
+                     if fmt == "reel" else "")
             if not text.strip() or not cta.strip():
                 fail(f"{fmt}: нужны текст и следующий шаг cta")
             used = set(item.get("claims", []))
             used_claim_ids.update(used)
-            if used - registry.keys() or set(MARK.findall(text + cta)) - used:
+            if used - registry.keys() or set(MARK.findall(text + cta + "\n" + extra)) - used:
                 fail(f"{fmt}: неизвестное или незарегистрированное утверждение")
             if not used:
                 fail(f"{fmt}: должен опираться хотя бы на один подтверждённый факт")
             supported_claims = [registry[c]["text"] for c in used if c in registry]
             supported = " ".join(supported_claims)
             full = clean(text + "\n" + cta)
-            for gap in evidence_gaps(full, supported_claims):
+            for gap in evidence_gaps(full + ("\n" + clean(extra) if extra else ""), supported_claims):
                 fail(f"{fmt}: {gap['message']}")
             norm = lambda s: re.sub(r"\s+", "", s).replace(",", ".").lower()
             allowed = {norm(x) for x in NUMBER.findall(supported)}
-            for value in NUMBER.findall(text + " " + cta):
+            for value in NUMBER.findall(text + " " + cta + " " + extra):
                 if norm(value) not in allowed:
                     fail(f"{fmt}: числовая характеристика без связанного факта: {value}")
+            if fmt == "reel":
+                for finding in reels.findings(root, name, item):
+                    (errors if finding["level"] == "error" else warnings).append(finding)
+                all_public.append(extra)
             lower, upper, mode = FORMATS.get(fmt, (0, 0, "none"))
             lengths = ([len(x.strip()) for x in clean(text).splitlines() if x.strip()] if mode == "lines"
                        else [len(re.findall(r"\b[\w-]+\b", full)) if mode == "words" else len(full)])

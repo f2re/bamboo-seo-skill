@@ -12,6 +12,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .core import (BambooError, approval_token, config, file_digest, job_path, now,
                    read_json, safe, snapshot, write_json, write_text)
+from . import reels
 from .net import request, secret
 from .quality import clean, http_url, require_approval, validate
 
@@ -117,6 +118,9 @@ def export(root: Path, name: str) -> dict:
         shutil.copyfile(source, target)
         urls.append(rel)
     for fmt, item in pack["formats"].items():
+        if fmt == "reel":
+            reels.export(dest, name, item)
+            continue
         write_text(safe(dest, f"{fmt}.txt"), (vk_plain(clean(item["text"])) if fmt == "vk" else clean(item["text"])) + "\n\n" + (vk_plain(clean(item["cta"])) if fmt == "vk" else clean(item["cta"])) + "\n")
     photo_manifest = [{"file": url, "alt": p["alt"], "caption": p.get("caption", ""),
                        **({"after_block": p["after_block"]} if "after_block" in p else {})}
@@ -151,7 +155,8 @@ def export(root: Path, name: str) -> dict:
     for fmt, item in pack["formats"].items():
         rendered = body(root, name, urls) if fmt == "article" else (
             "<div class=\"vk-post\">" + html.escape(vk_plain(clean(item["text"]) + "\n\n" + clean(item["cta"]))) + "</div>"
-            if fmt == "vk" else markdown(item["text"]) + markdown(item["cta"]))
+            if fmt == "vk" else reels.preview(item) if fmt == "reel"
+            else markdown(item["text"]) + markdown(item["cta"]))
         sections.append(f'<section data-format="{fmt}"><h2>{fmt}</h2>{rendered}</section>')
     if "article" not in pack["formats"]:
         for photo, url in zip(pack["photos"], urls):
@@ -164,6 +169,8 @@ def export(root: Path, name: str) -> dict:
             safe(dest, f"{fmt}.txt").unlink(missing_ok=True)
     if "vk" not in pack["formats"]:
         safe(dest, "vk.json").unlink(missing_ok=True)
+    if "reel" not in pack["formats"]:
+        reels.remove_export(dest)
     write_text(dest / "preview.html", page(pack["title"], pack["description"], content))
     write_json(dest / "manifest.json", {"slug": name, "content_hash": snapshot(root, name), "draft": True,
                                                "created_at": now(), "product_ids": brief.get("product_ids", []),

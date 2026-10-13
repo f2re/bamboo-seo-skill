@@ -7,6 +7,7 @@ description: Пишет и адаптирует предметные посты,
 
 Читайте docs/PUBLICATION_STYLE.md, docs/BRAND.md, docs/WORKFLOW.md и docs/COMMERCE.md.
 Для терминов — docs/DOMAIN.md. Пути от корня; CLI python bamboo.py.
+Reels для Instagram готовит bamboo-reel; подпись к ролику пишется там же.
 
 1. Прочитайте поручение и существующий текст/параметры. Сохраните данные при редактуре.
 2. Выберите аудиторию и профиль style до написания. Пост и статья решают разные задачи.

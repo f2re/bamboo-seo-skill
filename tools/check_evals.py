@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 REQUIRED_ROUTING = {"id", "prompt", "expected_skill", "forbidden_skills"}
 REQUIRED_CONTENT = {"id", "prompt", "expected_skill", "expectations"}
 SKILLS = {"bamboo-plan", "bamboo-research", "bamboo-content", "bamboo-review",
-          "bamboo-publish", "bamboo-analytics"}
+          "bamboo-publish", "bamboo-analytics", "bamboo-reel"}
 
 
 def read_jsonl(path: Path) -> list[dict]:

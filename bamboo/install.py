@@ -55,6 +55,7 @@ def adapters(source: Path, systems: set[str], engine: str) -> tuple[dict[str, st
         "Параллельные агенты возвращают отчёты; только координатор изменяет pack.json. "
         "При недоступности субагентов выполните роли последовательно и назовите это последовательной проверкой.\n"
         f"Для управления магазином ВК используйте `{prefix}skills/bamboo-vk-store/SKILL.md` и `{prefix}docs/VK_STORE.md`; `vk apply` без `--execute` ничего не отправляет.\n"
+        f"Reels для Instagram — `{prefix}skills/bamboo-reel/SKILL.md` и `{prefix}docs/REELS.md`; монтаж — ffmpeg-skill, исходники в `content/jobs/<slug>/raw/` не изменяются.\n"
         f"Канонические скиллы: `{prefix}skills/`; роли: `{prefix}agents/`. Не читайте все файлы без необходимости.\n{END}")
     blocks = {"AGENTS.md": instruction}
     if "claude" in systems:
