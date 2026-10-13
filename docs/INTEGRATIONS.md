@@ -26,7 +26,7 @@
 ## Claude Code
 
 Команды `/bamboo-plan`, `/bamboo-research`, `/bamboo-content`, `/bamboo-review`,
-`/bamboo-publish`, `/bamboo-analytics`. У публикации `disable-model-invocation: true`:
+`/bamboo-publish`, `/bamboo-analytics`, `/bamboo-reel`. У публикации `disable-model-invocation: true`:
 она не должна стартовать по инициативе модели. Контроль CLI действует дополнительно.
 Подагенты получают только Read, Grep, Glob и model=inherit. Внешнее исследование и запуск
 CLI выполняет координатор со штатными разрешениями, а не read-only проверяющий.

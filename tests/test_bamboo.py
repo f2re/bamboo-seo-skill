@@ -342,6 +342,8 @@ class InstallTests(unittest.TestCase):
         expected={f'.agents/skills/{path.parent.name}/SKILL.md' for path in (ROOT/'skills').glob('*/SKILL.md')}
         self.assertEqual({x for x in files if x.startswith('.agents/skills/')},expected)
         self.assertIn('.agents/skills/bamboo-vk-store/SKILL.md',files)
+        self.assertIn('.claude/skills/bamboo-reel/SKILL.md',files)
+        self.assertIn('docs/INSTAGRAM.md',blocks['AGENTS.md'])
         self.assertIn('sandbox_mode = "read-only"',files['.codex/agents/bamboo-vk-reviewer.toml'])
         self.assertIn('disable-model-invocation: true',files['.claude/skills/bamboo-publish/SKILL.md'])
         self.assertIn('sandbox_mode = "read-only"',files['.codex/agents/bamboo-editor.toml'])

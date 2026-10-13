@@ -14,3 +14,7 @@ site/
 .bamboo/
 *.zip
 .bamboo/vk/
+
+# Внешние скиллы, ставятся локально через npx
+.claude/skills/ffmpeg-skill/
+.agents/skills/ffmpeg-skill/

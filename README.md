@@ -132,6 +132,7 @@ python bamboo.py uninstall
 | `bamboo-publish` | Превью, проверка разрешения и явная публикация |
 | `bamboo-analytics` | Импорт метрик, сравнение периодов, предложения изменений |
 | `bamboo-vk-store` | Управление магазином ВК: чтение, план, подтверждение, запись и сверка |
+| `bamboo-reel` | Reels и карусели Instagram: хуки, раскадровка, подпись, монтаж через ffmpeg-skill |
 
 Шесть ролей: `bamboo-researcher`, `bamboo-factcheck`, `bamboo-editor`, `bamboo-seo`,
 `bamboo-analyst`, `bamboo-vk-reviewer`. Они работают на чтение и возвращают отчёты координатору.
