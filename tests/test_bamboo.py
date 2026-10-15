@@ -696,4 +696,26 @@ class VideoPackTests(Fixture):
             q.require_approval(self.root,'example')
 
 
+
+class OwnerApproveTests(Fixture):
+    def test_owner_approve_one_step_and_bound_to_version(self):
+        self.good('vk')
+        result = q.owner_approve(self.root, 'example', 'Владелец')
+        self.assertEqual(result['mode'], 'owner')
+        q.require_approval(self.root, 'example')
+        self.change('pack.json', lambda d: d['formats']['vk'].update(cta='Другой призыв.'))
+        with self.assertRaises(BambooError):
+            q.require_approval(self.root, 'example')
+        q.owner_approve(self.root, 'example', 'Владелец', 'Новая версия одобрена')
+        q.require_approval(self.root, 'example')
+
+    def test_owner_approve_needs_name_and_valid_content(self):
+        self.good('vk')
+        with self.assertRaises(BambooError):
+            q.owner_approve(self.root, 'example', ' ')
+        self.change('claims.json', lambda d: d[0].update(status='unverified'))
+        with self.assertRaises(BambooError):
+            q.owner_approve(self.root, 'example', 'Владелец')
+
+
 if __name__=='__main__': unittest.main()

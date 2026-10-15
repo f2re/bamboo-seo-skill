@@ -33,9 +33,12 @@ def parser() -> argparse.ArgumentParser:
     n.add_argument("--products", default="")
     for name in ("validate", "status", "review-template", "export", "wp-reconcile"):
         sub.add_parser(name).add_argument("slug")
-    a = sub.add_parser("approve", help="Утвердить вручную проверенную конкретную версию")
+    a = sub.add_parser("approve", help="Утвердить текущую версию: --owner по поручению владельца или --confirm после рецензии")
     a.add_argument("slug")
-    a.add_argument("--confirm", required=True, help="Полный токен slug@sha256 из status")
+    mode = a.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--owner", help="Имя владельца, утвердившего материал (рецензия пишется автоматически)")
+    mode.add_argument("--confirm", help="Полный токен slug@sha256 из status после заполненной рецензии")
+    a.add_argument("--note", default="", help="Комментарий владельца")
     a = sub.add_parser("publish", help="По умолчанию показать план без записи и сети")
     a.add_argument("slug")
     a.add_argument("--channel", choices=["static", "wordpress"], required=True)
@@ -130,6 +133,8 @@ def dispatch(a: argparse.Namespace) -> dict:
         if cmd == "review-template":
             return quality.review_template(root, a.slug)
         if cmd == "approve":
+            if a.owner:
+                return quality.owner_approve(root, a.slug, a.owner, a.note)
             return quality.approve(root, a.slug, a.confirm)
         if cmd == "export":
             return publishing.export(root, a.slug)

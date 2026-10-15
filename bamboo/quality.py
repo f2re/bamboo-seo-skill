@@ -282,6 +282,24 @@ def approve(root: Path, name: str, confirmation: str) -> dict:
     return data
 
 
+def owner_approve(root: Path, name: str, owner: str, note: str = "") -> dict:
+    """Утверждение владельцем по поручению в чате: рецензия и approval пишутся сами для текущей версии."""
+    if not isinstance(owner, str) or not owner.strip():
+        raise BambooError("Укажите владельца: --owner ИМЯ")
+    report = validate(root, name)
+    if not report["ok"]:
+        raise BambooError("Контент не прошёл validate: " + "; ".join(e["message"] for e in report["errors"]))
+    content_hash = snapshot(root, name)
+    review = {"schema_version": 1, "content_hash": content_hash, "reviewer": owner.strip(), "mode": "owner",
+              "checks": {k: True for k in CHECKS}, "notes": note.strip() or "Утверждено владельцем в чате",
+              "warnings_acknowledged": True, "warnings": [w["message"] for w in report["warnings"]], "created_at": now()}
+    write_json(job_path(root, name) / "review.json", review)
+    data = {"content_hash": content_hash, "review_hash": file_digest(job_path(root, name) / "review.json"),
+            "reviewer": review["reviewer"], "mode": "owner", "approved_at": now()}
+    write_json(job_path(root, name) / "approval.json", data)
+    return data
+
+
 def require_approval(root: Path, name: str) -> dict:
     report = validate(root, name)
     if not report["ok"]:
