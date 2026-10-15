@@ -26,12 +26,12 @@ Python 3.10+. В Windows используйте `py -3`.
    Откройте в браузере под аккаунтом владельца/администратора сообщества ссылку авторизации
    с официальным клиентом `vk.com` (ID `6287487`):
    ```text
-   https://oauth.vk.com/authorize?client_id=6287487&scope=market,photos,groups,wall,offline&redirect_uri=https://oauth.vk.com/blank.html&response_type=token&v=5.199
+   https://oauth.vk.com/authorize?client_id=6287487&scope=market,photos,groups,wall,video,offline&redirect_uri=https://oauth.vk.com/blank.html&response_type=token&v=5.199
    ```
    *(При недоступности домена vk.com можно использовать зеркало `oauth.vk.ru`).*
 
 3. **Разрешите доступ и скопируйте ключ**:
-   В появившемся окне подтвердите доступ (товары, фотографии, группы, стена и бессрочный доступ).
+   В появившемся окне подтвердите доступ (товары, фотографии, группы, стена, видео и бессрочный доступ).
    Браузер перейдёт на пустую страницу `blank.html`. В адресной строке будет адрес:
    ```text
    https://oauth.vk.com/blank.html#access_token=vk1.a.ВАШ_КЛЮЧ...&expires_in=0&user_id=...
@@ -79,6 +79,7 @@ python3 bamboo.py vk login
 * **VK 1051 (Method is not available for this profile type):** Кабинет VK ID предназначен для
   аутентификации пользователей на сайтах (имя, email, телефон) и не выдаёт права `market` новым Web-приложениям.
   При авторизации через `id.vk.com` токен урезается до `vkid.personal_info`, а вызовы `market.*` блокируются.
+* **VK 5 (access_token was given to another ip address):** ключ привязан к IP браузера. Если браузер работает через VPN или прокси, а терминал напрямую, получите ключ в браузере без VPN (или включите VPN и для терминала) и повторите `vk token-import`. Команда принимает и полный адрес `blank.html#access_token=…`.
 * **VK 27 (Group authorization failed: method is unavailable with group auth):** Создание «Ключа доступа
   сообщества» в настройках группы (*Управление → Дополнительно → Работа с API*) не позволяет управлять витриной:
   ВКонтакте на уровне API запрещает методы `market.*` для ключей сообщества, требуя токен пользователя.

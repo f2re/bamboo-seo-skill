@@ -596,6 +596,15 @@ class AuthTests(unittest.TestCase):
         with self.assertRaises(VKError):
             auth.finish(self.root, "https://attacker.example/?code=X&device_id=D&state=S")
 
+    def test_token_import_accepts_blank_html_url(self):
+        url = "https://oauth.vk.ru/blank.html#access_token=TEST_SECRET&expires_in=86400&user_id=1"
+        auth.import_token(self.root, url)
+        self.assertEqual(auth.token(self.root), "TEST_SECRET")
+        for bad in ("https://evil.example/blank.html#access_token=X", "TEST SECRET", "password=1"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(VKError):
+                    auth.import_token(self.root, bad)
+
     def test_key_file_permissions_rejected(self):
         if os.name != "posix":
             self.skipTest("POSIX mode check")

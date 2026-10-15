@@ -123,10 +123,28 @@ def finish(root, callback):
     return {"saved": True, "next": "vk check; успешный вход сам по себе не доказывает права wall/market/photos"}
 
 
+def token_from_input(value):
+    """Принимает сам ключ либо полный адрес oauth.vk.com|vk.ru/blank.html#access_token=…"""
+    value = (value or "").strip()
+    expires_at = None
+    if "access_token=" in value:
+        from urllib.parse import parse_qs, urlsplit
+        url = urlsplit(value)
+        if url.scheme != "https" or url.hostname not in ("oauth.vk.com", "oauth.vk.ru") or url.path != "/blank.html":
+            raise VKError("Адрес не похож на страницу oauth.vk.com/blank.html")
+        fragment = parse_qs(url.fragment)
+        value = (fragment.get("access_token") or [""])[0]
+        lifetime = (fragment.get("expires_in") or ["0"])[0]
+        if lifetime.isdigit() and int(lifetime) > 0:
+            expires_at = time.time() + int(lifetime)
+    if not value or any(c.isspace() for c in value) or "=" in value or "/" in value:
+        raise VKError("Вставьте ключ или полный адрес blank.html#access_token=…, не пароль")
+    return value, expires_at
+
+
 def import_token(root, value):
-    if not value or any(c.isspace() for c in value) or "access_token=" in value:
-        raise VKError("Вставьте только значение пользовательского ключа, не URL и не пароль")
+    value, expires_at = token_from_input(value)
     path = credential_path(root)
     with locked(path.with_suffix(".lock")):
-        write(path, {"access_token": value, "expires_at": None, "source": "manual"})
+        write(path, {"access_token": value, "expires_at": expires_at, "source": "manual"})
     return {"saved": True, "next": "vk check; импортированный ключ не имеет автоматического обновления"}

@@ -83,6 +83,10 @@ class API:
                             15: "Нет доступа администратора к объекту",
                             27: "Этот метод недоступен ключу сообщества; нужен пользовательский ключ",
                             100: "VK отклонил параметры; сверьте контракт и настройки магазина"}
+                detail = obj["error"].get("error_msg", "") if isinstance(obj["error"], dict) else ""
+                if code == 5 and "another ip" in str(detail):
+                    messages[5] = ("Ключ выдан на другой IP-адрес: браузер и терминал выходят в сеть по-разному "
+                                   "(VPN/прокси). Получите ключ в браузере без VPN и повторите vk token-import")
                 error = Uncertain if mutation and code == 10 else Rejected
                 suffix = str(code) if type(code) is int else "unknown"
                 raise error("VK " + suffix + ": " + messages.get(code, "Запрос отклонён; подробности и секреты не выводятся"))
