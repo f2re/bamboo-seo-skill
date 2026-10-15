@@ -18,6 +18,8 @@ from bamboo.vk.store import Store, initialize
 from bamboo.vk.transport import API, NoRedirect
 from bamboo.vk.mcp import serve, call
 
+MP4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2" + b"\x00" * 64
+
 
 class FakeAPI:
     def __init__(self):
@@ -78,8 +80,12 @@ class FakeAPI:
                 ident = 11
                 self.posts[ident] = {"id": ident, "owner_id": p["owner_id"], "text": p.get("message", ""), "attachments": [], "date": p.get("publish_date", int(time.time()))}
                 for a in p.get("attachments", []):
-                    owner, photo_id = a.removeprefix("photo").split("_")
-                    self.posts[ident]["attachments"].append({"type": "photo", "photo": {"id": int(photo_id), "owner_id": int(owner)}})
+                    kind = "video" if a.startswith("video") else "photo"
+                    owner, media_id = a.removeprefix(kind).split("_")
+                    value = {"id": int(media_id), "owner_id": int(owner)}
+                    if kind == "video":
+                        value["access_key"] = "server-side-key"
+                    self.posts[ident]["attachments"].append({"type": kind, kind: value})
                 response = {"post_id": ident}
             elif method == "wall.edit":
                 self.posts[p["post_id"]]["text"] = p.get("message", "")
@@ -103,6 +109,10 @@ class FakeAPI:
     def upload(self, kind, content, filename, group_id, main_photo=True):
         self.writes.append((kind, {"group_id": group_id}))
         return {"photo_id": 101, "attachment": "photo-77_101"}
+
+    def upload_video(self, content, group_id, name):
+        self.writes.append(("video.wall", {"group_id": group_id, "name": name, "size": len(content)}))
+        return {"video_id": 501, "attachment": "video-77_501"}
 
 
 class StoreTests(unittest.TestCase):
@@ -366,6 +376,56 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(VKError):
             self.plan("post.create", {"message": "Текст", "publish_date": 1})
 
+    def write_video(self, data=MP4):
+        path = self.root / "content/media/reel.mp4"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return "content/media/reel.mp4"
+
+    def video_plan(self):
+        path = self.write_video()
+        with patch.object(Store, "approved_content", return_value=("Согласованный текст", [path], "approval-one")), \
+                patch.object(Store, "video_titles", return_value={path: "Тестовый ролик"}):
+            return self.store.plan_post("approved-job", "Опубликовать ролик")
+
+    def test_video_post_upload_and_attach(self):
+        p = self.video_plan()
+        ops = [a["operation"] for a in p["plan"]["actions"]]
+        self.assertEqual(ops, ["video.wall", "post.create"])
+        self.assertEqual(p["plan"]["actions"][0]["params"], {"file": "content/media/reel.mp4", "name": "Тестовый ролик"})
+        with patch.object(Store, "approved_content", return_value=("Согласованный текст", ["content/media/reel.mp4"], "approval-one")):
+            result = self.apply(p)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(self.api.writes[0][0], "video.wall")
+        self.assertEqual(self.api.writes[1][1]["attachments"], ["video-77_501"])
+
+    def test_video_changed_after_plan_no_upload(self):
+        p = self.video_plan()
+        self.write_video(MP4 + b"changed")
+        with patch.object(Store, "approved_content", return_value=("Согласованный текст", ["content/media/reel.mp4"], "approval-one")):
+            with self.assertRaises(VKError):
+                self.apply(p)
+        self.assertFalse(self.api.writes)
+
+    def test_video_path_format_and_title_rejected(self):
+        self.write_video()
+        (self.root / "content/media/fake.mp4").write_bytes(b"not a video at all")
+        for params in ({"file": "content/media/reel.mp4"}, {"file": "content/jobs/x/reel.mp4", "name": "Ролик"},
+                       {"file": "content/media/fake.mp4", "name": "Ролик"}):
+            with self.subTest(params=params):
+                with self.assertRaises(VKError):
+                    self.plan("video.wall", params)
+
+    def test_video_title_must_match_approved_pack(self):
+        path = self.write_video()
+        with patch.object(Store, "approved_content", return_value=("Согласованный текст", [path], "approval-one")), \
+                patch.object(Store, "video_titles", return_value={path: "Тестовый ролик"}):
+            with self.assertRaises(VKError):
+                self.store.plan({"request": "Публикация", "actions": [
+                    {"operation": "video.wall", "params": {"file": path, "name": "Другое имя"}},
+                    {"operation": "post.create", "params": {"message": "Согласованный текст", "attachments": ["$0.attachment"]},
+                     "content_job": "approved-job"}]})
+
     def test_safe_paths_and_symlink(self):
         for path in ("../secret", "/etc/passwd", "content/../.env"):
             with self.assertRaises(VKError):
@@ -444,6 +504,35 @@ class ContractTests(unittest.TestCase):
         names = [tool["name"] for tool in rows[1]["result"]["tools"]]
         self.assertIn("vk_apply", names)
         self.assertNotIn("vk_login", names)
+
+
+    def test_video_upload_checks_host_and_field(self):
+        sent = []
+        def transport(url, body, content_type="application/x-www-form-urlencoded", mutation=False):
+            sent.append((url, body, content_type))
+            if url.endswith("/video.save"):
+                return {"response": {"upload_url": upload, "video_id": 501, "owner_id": -77}}
+            return {"size": len(MP4), "video_id": 501}
+        upload = "https://evil.example/upload"
+        api = API(lambda: "TEST_SECRET", transport=transport)
+        with self.assertRaises(VKError):
+            api.upload_video(MP4, 77, "Ролик")
+        self.assertEqual(len(sent), 1)
+        upload = "https://vu.mycdn.me/upload.do?sig=test"
+        sent.clear()
+        result = api.upload_video(MP4, 77, "Ролик")
+        self.assertEqual(result, {"video_id": 501, "attachment": "video-77_501"})
+        self.assertIn(b'name="video_file"', sent[1][1])
+        self.assertNotIn(b"TEST_SECRET", sent[1][1])
+        self.assertIn("group_id=77", sent[0][1].decode())
+
+    def test_video_upload_id_mismatch_is_uncertain(self):
+        def transport(url, body, content_type="application/x-www-form-urlencoded", mutation=False):
+            if url.endswith("/video.save"):
+                return {"response": {"upload_url": "https://vu.mycdn.me/upload.do", "video_id": 501, "owner_id": -77}}
+            return {"size": 1, "video_id": 999}
+        with self.assertRaises(Uncertain):
+            API(lambda: "TEST_SECRET", transport=transport).upload_video(MP4, 77, "Ролик")
 
 
 class AuthTests(unittest.TestCase):

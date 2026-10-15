@@ -88,7 +88,7 @@ def start(root, open_browser=False):
         write(path, pending)
     url = "https://id.vk.com/authorize?" + urlencode({"response_type": "code", "client_id": cfg["client_id"],
            "redirect_uri": redirect, "state": state, "code_challenge": challenge,
-           "code_challenge_method": "S256", "scope": cfg.get("scopes", "wall photos groups market")})
+           "code_challenge_method": "S256", "scope": cfg.get("scopes", "wall photos groups market video")})
     if open_browser:
         webbrowser.open(url)
     return {"authorize_url": url, "next": "После разрешения скопируйте полный адрес localhost из браузера. Выполните vk auth-finish и вставьте его локально, не в чат.",

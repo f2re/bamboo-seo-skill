@@ -190,7 +190,7 @@ def new_job(root: Path, name: str, topic: str, formats: list[str],
 
 
 def snapshot(root: Path, name: str) -> str:
-    """Связывает утверждение с конфигом, фактами, файлами источников, товарами и фото."""
+    """Связывает утверждение с конфигом, фактами, файлами источников, товарами, фото и видео."""
     job = job_path(root, name)
     brief = read_json(job / "brief.json")
     pack = read_json(job / "pack.json")
@@ -202,8 +202,8 @@ def snapshot(root: Path, name: str) -> str:
     for source in sources:
         if source.get("path"):
             paths.add(safe(root, source["path"]))
-    for photo in pack.get("photos", []):
-        paths.add(safe(root, photo["path"]))
+    for media in pack.get("photos", []) + pack.get("videos", []):
+        paths.add(safe(root, media["path"]))
     for path in safe(root, "content/voice").glob("*.md"):
         paths.add(safe(root, path.relative_to(root.resolve()).as_posix()))
     for filename in ("AGENTS.md", "CLAUDE.md", "GEMINI.md"):

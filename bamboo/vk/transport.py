@@ -11,6 +11,10 @@ from urllib.request import Request, HTTPRedirectHandler, build_opener
 from .common import VKError, Rejected, Uncertain, loads
 
 
+# VK Видео принимает файлы на собственных CDN VK и на инфраструктуре mycdn.me / okcdn.ru.
+VIDEO_UPLOAD_HOSTS = ("vk.com", "vk.ru", "userapi.com", "vk-cdn.net", "vkuser.net", "mycdn.me", "okcdn.ru")
+
+
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -116,3 +120,20 @@ class API:
         if type(photo.get("owner_id")) is not int:
             raise Uncertain("Не получен владелец фотографии")
         return {"photo_id": photo["id"], "attachment": f"photo{photo['owner_id']}_{photo['id']}"}
+
+    def upload_video(self, content, group_id, name):
+        """video.save → загрузка файла на выданный сервер. Без автоповтора: сбой — Uncertain."""
+        server = self.call("video.save", {"group_id": group_id, "name": name, "wallpost": 0}, mutation=True)
+        if (not isinstance(server, dict) or not isinstance(server.get("upload_url"), str)
+                or type(server.get("video_id")) is not int or type(server.get("owner_id")) is not int):
+            raise Uncertain("video.save не вернул адрес загрузки; заготовка видео могла создаться")
+        host = urlsplit(server["upload_url"]).hostname or ""
+        if not any(host == suffix or host.endswith("." + suffix) for suffix in VIDEO_UPLOAD_HOSTS):
+            raise VKError("Сервер загрузки видео не принадлежит разрешённым доменам VK")
+        boundary = "bamboo" + secrets.token_hex(20)
+        body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"video_file\"; filename=\"upload.mp4\"\r\n"
+                "Content-Type: video/mp4\r\n\r\n").encode() + content + f"\r\n--{boundary}--\r\n".encode()
+        uploaded = self.transport(server["upload_url"], body, "multipart/form-data; boundary=" + boundary, mutation=True)
+        if "error" in uploaded or uploaded.get("video_id", server["video_id"]) != server["video_id"]:
+            raise Uncertain("Сервер загрузки не подтвердил видео; проверьте раздел видео сообщества вручную")
+        return {"video_id": server["video_id"], "attachment": f"video{server['owner_id']}_{server['video_id']}"}

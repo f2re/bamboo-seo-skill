@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .auth import token
 from .common import VKError, Rejected, Uncertain, config, fingerprint, local, locked, read, safe, write
-from .registry import REGISTRY, REF, PRODUCT, validate, api_params
+from .registry import REGISTRY, REF, PRODUCT, UPLOADS, validate, api_params
 from .transport import API
 
 
@@ -23,7 +23,7 @@ def initialize(root, community, client_id=None, redirect_uri="http://localhost/v
         raise VKError("Конфигурация уже существует; она не перезаписана")
     write(path, {"schema_version": 1, "community": community, "group_id": None,
                  "client_id": str(client_id) if client_id else None, "redirect_uri": redirect_uri,
-                 "scopes": "wall photos groups market", "api_version": "5.199"})
+                 "scopes": "wall photos groups market video", "api_version": "5.199"})
     ignore = safe(root, ".gitignore")
     text = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
     if ".bamboo/vk/" not in text.splitlines():
@@ -61,12 +61,14 @@ def target_key(name, params):
     return entity + ":" + str(params[field]) if field and field in params else ("store" if entity == "store" else None)
 
 
-def attachment_ids(before):
+def attachment_ids(before, strict=True):
+    """strict=False — только для сверки ID: access_key видео, выданный VK, не мешает сравнению."""
     values = []
     for attachment in before.get("attachments", []):
         kind = attachment.get("type")
         value = attachment.get(kind, {})
-        if kind not in ("photo", "video", "doc", "market", "album", "poll") or "id" not in value or "owner_id" not in value or value.get("access_key"):
+        if (kind not in ("photo", "video", "doc", "market", "album", "poll") or "id" not in value or "owner_id" not in value
+                or (strict and value.get("access_key"))):
             raise VKError("Запись содержит вложение, которое нельзя безопасно пересобрать. Укажите attachments явно после проверки")
         values.append(f"{kind}{value['owner_id']}_{value['id']}")
     return values
@@ -82,6 +84,29 @@ def media(root, relative):
     if not (content.startswith(b"\x89PNG\r\n\x1a\n") or (content.startswith(b"\xff\xd8\xff") and content.endswith(b"\xff\xd9"))):
         raise VKError("Файл не похож на JPEG/PNG")
     return content
+
+
+VIDEO_LIMIT = 256 * 1024 * 1024
+
+
+def video_media(root, relative):
+    path = safe(root, relative)
+    if not str(relative).startswith("content/media/") or path.suffix.lower() not in (".mp4", ".mov"):
+        raise VKError("Видео: MP4/MOV внутри content/media/")
+    if path.stat().st_size > VIDEO_LIMIT:
+        raise VKError("Локальный предел видео — 256 МиБ")
+    content = path.read_bytes()
+    if content[4:8] != b"ftyp":
+        raise VKError("Файл не похож на MP4/MOV")
+    return content
+
+
+def is_video(relative):
+    return str(relative).lower().endswith((".mp4", ".mov"))
+
+
+def load_media(root, operation, relative):
+    return video_media(root, relative) if operation == "video.wall" else media(root, relative)
 
 
 class Store:
@@ -216,11 +241,27 @@ class Store:
         except BambooError as exc:
             raise VKError(str(exc)) from None
 
+    def video_titles(self, name):
+        from bamboo.core import BambooError, job_path, read_json
+        try:
+            pack = read_json(job_path(self.root, name) / "pack.json")
+            return {v["path"]: v["title"] for v in pack.get("videos", [])}
+        except (BambooError, KeyError, TypeError) as exc:
+            raise VKError("Не удалось прочитать видео утверждённого пакета") from exc
+
+    def upload_action(self, job, path):
+        if is_video(path):
+            titles = self.video_titles(job)
+            if path not in titles:
+                raise VKError("Видео отсутствует в pack.videos утверждённого пакета")
+            return {"operation": "video.wall", "params": {"file": path, "name": titles[path]}}
+        return {"operation": "photo.wall", "params": {"file": path}}
+
     def plan_post(self, name, request, publish_date=None, fmt="vk"):
         message, photos, _ = self.approved_content(name, fmt=fmt)
         if len(photos) > 10:
             raise VKError("VK допускает в этом сценарии до десяти вложений")
-        actions = [{"operation": "photo.wall", "params": {"file": path}} for path in photos]
+        actions = [self.upload_action(name, path) for path in photos]
         params = {"message": message, "attachments": ["$" + str(i) + ".attachment" for i in range(len(photos))]}
         if publish_date is not None:
             params["publish_date"] = publish_date
@@ -249,8 +290,8 @@ class Store:
                     match = REF.fullmatch(part) if isinstance(part, str) else None
                     if match:
                         previous = int(match[1])
-                        expected = "photo.wall" if key == "attachments" else "photo.product"
-                        if previous >= index or actions[previous]["operation"] != expected:
+                        expected = ("photo.wall", "video.wall") if key == "attachments" else ("photo.product",)
+                        if previous >= index or actions[previous]["operation"] not in expected:
                             raise VKError("Ссылка должна указывать на предшествующую загрузку подходящей фотографии")
             target = target_key(name, params)
             before = None
@@ -271,11 +312,12 @@ class Store:
                 raise VKError("Отложенная публикация требует будущего Unix-времени")
             normalized = {"operation": name, "params": params, "before": before,
                           "destructive": REGISTRY[name]["destructive"] or params.get("deleted") is True}
-            if name.startswith("photo."):
-                content = media(self.root, params["file"])
-                total_media += len(content)
-                if total_media > 50 * 1024 * 1024:
-                    raise VKError("Суммарно в плане допускается не более 50 МиБ фотографий")
+            if name in UPLOADS:
+                content = load_media(self.root, name, params["file"])
+                if name != "video.wall":
+                    total_media += len(content)
+                    if total_media > 50 * 1024 * 1024:
+                        raise VKError("Суммарно в плане допускается не более 50 МиБ фотографий")
                 normalized["media_sha256"] = hashlib.sha256(content).hexdigest()
             if action.get("content_job"):
                 content_fmt = action.get("content_format", "vk")
@@ -284,7 +326,8 @@ class Store:
                 if (name != "post.create" or params.get("message") != message
                         or params.get("attachments", []) != expected_photos
                         or [a["params"].get("file") for a in actions] != photos
-                        or any(a["operation"] != "photo.wall" for a in actions)):
+                        or [{"operation": a["operation"], "params": a["params"]} for a in actions]
+                        != [self.upload_action(action["content_job"], path) for path in photos]):
                     raise VKError("План публикации не совпадает с утверждённым пакетом; используйте vk plan-post")
                 normalized["content_job"] = action["content_job"]
                 if action.get("content_format"):
@@ -326,6 +369,12 @@ class Store:
         return {key: [one(x) for x in value] if isinstance(value, list) else one(value) for key, value in params.items()}
 
     def verify(self, name, params, response):
+        if name == "video.wall":
+            valid = (isinstance(response, dict) and type(response.get("video_id")) is int and response["video_id"] > 0
+                     and isinstance(response.get("attachment"), str)
+                     and bool(re.fullmatch(r"video-?\d+_" + str(response["video_id"]), response["attachment"])))
+            return {"verified": valid, "basis": "ID видео из video.save, загрузка подтверждена сервером" if valid
+                    else "Нет подтверждённого ID; требуется ручная сверка"}
         if name.startswith("photo."):
             valid = (isinstance(response, dict) and type(response.get("photo_id")) is int
                      and response["photo_id"] > 0 and isinstance(response.get("attachment"), str)
@@ -368,7 +417,7 @@ class Store:
             elif key == "photo_ids":
                 actual = [p["id"] for p in after.get("photos", [])[1:]]
             elif key == "attachments":
-                actual = attachment_ids(after)
+                actual = attachment_ids(after, strict=False)
             elif key == "publish_date":
                 actual = after.get("date")
             elif key == "photo_id":
@@ -427,9 +476,9 @@ class Store:
                 if action["before"] is not None and self.current(action["operation"], action["params"]) != action["before"]:
                     raise VKError("Объект изменился в VK; обновите снимок и подготовьте новый план")
                 if "media_sha256" in action:
-                    content = media(self.root, action["params"]["file"])
+                    content = load_media(self.root, action["operation"], action["params"]["file"])
                     if hashlib.sha256(content).hexdigest() != action["media_sha256"]:
-                        raise VKError("Фото изменилось после подготовки плана")
+                        raise VKError("Файл медиа изменился после подготовки плана")
                     media_buffers[index] = content
             write(state_path, state)
             for index, action in enumerate(payload["actions"]):
@@ -447,7 +496,9 @@ class Store:
                 record.update(status="sending", operation=name, params=params, started_at=time.time())
                 write(state_path, state)  # Сбой после этой точки запрещает автоматический повтор.
                 try:
-                    if name.startswith("photo."):
+                    if name == "video.wall":
+                        response = self.api.upload_video(media_buffers[index], self.group_id, params["name"])
+                    elif name.startswith("photo."):
                         response = self.api.upload(name, media_buffers[index], params["file"], self.group_id, params.get("main_photo", True))
                     else:
                         outgoing = api_params(name, params, self.group_id)

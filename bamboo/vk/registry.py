@@ -68,6 +68,8 @@ register("statistics", "stats.get", None, {"timestamp_from": ZERO, "timestamp_to
                                            "interval": ("enum", "day", "week", "month", "year", "all")})
 register("photo.product", "photos.saveMarketPhoto", "photo", {"file": ("file",), "main_photo": BOOL}, ("file",), True)
 register("photo.wall", "photos.saveWallPhoto", "photo", {"file": ("file",)}, ("file",), True)
+register("video.wall", "video.save", "video", {"file": ("video_file",), "name": ("str", 1, 128)}, ("file", "name"), True)
+UPLOADS = {"photo.product", "photo.wall", "video.wall"}
 REF = re.compile(r"^\$(\d+)\.(photo_id|attachment)$")
 
 
@@ -93,6 +95,9 @@ def value_check(value, rule):
         valid = value in rule[1:]
     elif kind == "file":
         valid = isinstance(value, str) and value.startswith("content/media/")
+    elif kind == "video_file":
+        valid = (isinstance(value, str) and value.startswith("content/media/")
+                 and value.lower().endswith((".mp4", ".mov")))
     else:
         valid = isinstance(value, str) and rule[1] <= len(value) <= rule[2]
         if kind == "url" and value:

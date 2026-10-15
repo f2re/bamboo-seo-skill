@@ -64,6 +64,29 @@ def lint(text: str) -> list[dict]:
     return result
 
 
+
+VIDEO_LIMIT = 256 * 1024 * 1024
+
+
+def check_video(root: Path, video: dict, fail) -> None:
+    """Видео пакета: собственный файл MP4/MOV в content/media, права, название и неизменный sha256."""
+    path = safe(root, video["path"])
+    if not video["path"].startswith("content/media/") or path.suffix.lower() not in (".mp4", ".mov"):
+        fail("Видео: только mp4/mov в content/media")
+        return
+    if video.get("origin") not in ("camera", "edit") or video.get("rights_confirmed") is not True:
+        fail("Видео: нужна собственная съёмка или монтаж (origin camera/edit) с подтверждёнными правами")
+    title = video.get("title")
+    if not isinstance(title, str) or not 1 <= len(title.strip()) <= 128:
+        fail("Видео: нужно название до 128 знаков")
+    if not path.is_file():
+        fail("Видео: файл не найден")
+        return
+    if path.stat().st_size > VIDEO_LIMIT:
+        fail("Видео: локальный предел 256 МиБ")
+    if video.get("sha256") != file_digest(path):
+        fail("Видео изменено или не закреплено sha256")
+
 def validate(root: Path, name: str) -> dict:
     errors = []
     warnings = []
@@ -79,6 +102,9 @@ def validate(root: Path, name: str) -> dict:
             raise BambooError("brief/pack должны быть объектами; sources/claims — массивами")
         if not isinstance(pack.get("photos"), list) or not isinstance(pack.get("formats"), dict):
             raise BambooError("pack требует photos-массив и formats-объект")
+        if not isinstance(pack.get("videos", []), list) or not all(isinstance(v, dict) and isinstance(v.get("path"), str)
+                                                                for v in pack.get("videos", [])):
+            raise BambooError("pack.videos: массив объектов с path")
         if not isinstance(pack.get("title"), str) or not isinstance(pack.get("description"), str):
             raise BambooError("title и description должны быть строками")
         if brief.get("schema_version") != 1 or pack.get("schema_version") != 1:
@@ -195,6 +221,9 @@ def validate(root: Path, name: str) -> dict:
                 fail("Фото приписывает авторство предмету, которого нет в паспортах задачи")
             photographed.update(subjects)
             all_public += [photo.get("alt", ""), photo.get("caption", "")]
+        for video in pack.get("videos", []):
+            check_video(root, video, fail)
+            all_public.append(video.get("title", ""))
         if cfg["quality"].get("require_product_photos", True) and set(product_ids) - photographed:
             fail("Для каждого товара нужна фотография, связанная с его product_id")
 

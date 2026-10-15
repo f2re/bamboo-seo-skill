@@ -664,4 +664,36 @@ class NetTests(unittest.TestCase):
         self.assertEqual(opener.open.call_count,2)
 
 
+MP4 = b'\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2' + b'\x00' * 64
+
+
+class VideoPackTests(Fixture):
+    def with_video(self, **extra):
+        pack = read_json(self.job/'pack.json') if self.job.exists() else self.good('vk')
+        (self.root/'content/media/reel.mp4').write_bytes(MP4)
+        pack['videos'] = [{'path':'content/media/reel.mp4','sha256':digest(MP4),'origin':'edit',
+                           'rights_confirmed':True,'title':'Тестовый ролик',**extra}]
+        write_json(self.job/'pack.json', pack)
+        return pack
+
+    def test_video_in_pack_validates(self):
+        self.with_video()
+        self.assertTrue(q.validate(self.root,'example')['ok'])
+
+    def test_video_requires_rights_title_and_mp4(self):
+        for extra in ({'rights_confirmed':False}, {'title':''}, {'path':'content/media/reel.avi'}, {'origin':'generated'}):
+            with self.subTest(extra=extra):
+                self.with_video(**extra)
+                self.assertFalse(q.validate(self.root,'example')['ok'])
+
+    def test_changed_video_breaks_validate_and_approval(self):
+        self.with_video()
+        q.review_template(self.root,'example')
+        self.sign()
+        q.require_approval(self.root,'example')
+        (self.root/'content/media/reel.mp4').write_bytes(MP4 + b'x')
+        with self.assertRaises(BambooError):
+            q.require_approval(self.root,'example')
+
+
 if __name__=='__main__': unittest.main()
