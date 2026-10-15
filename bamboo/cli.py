@@ -75,6 +75,8 @@ def parser() -> argparse.ArgumentParser:
     a.add_argument("--dry-run", action="store_true")
     from .vk.cli import add_parser
     add_parser(sub)
+    from .ig.cli import add_parser as add_ig_parser
+    add_ig_parser(sub)
     return p
 
 
@@ -96,6 +98,9 @@ def dispatch(a: argparse.Namespace) -> dict:
     if cmd == "vk":
         from .vk.cli import dispatch as vk_dispatch
         return vk_dispatch(a)
+    if cmd == "ig":
+        from .ig.cli import dispatch as ig_dispatch
+        return ig_dispatch(a)
     if cmd == "init":
         return init(root)
     if cmd == "doctor":

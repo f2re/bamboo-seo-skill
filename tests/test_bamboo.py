@@ -697,6 +697,14 @@ class VideoPackTests(Fixture):
 
 
 
+class InstagramFormatTests(Fixture):
+    def test_instagram_caption_hashtag_limit(self):
+        self.good('instagram')
+        self.assertTrue(q.validate(self.root,'example')['ok'])
+        self.change('pack.json', lambda d: d['formats']['instagram'].update(cta='Сохраните. #a #b #c #d #e #f'))
+        self.assertFalse(q.validate(self.root,'example')['ok'])
+
+
 class OwnerApproveTests(Fixture):
     def test_owner_approve_one_step_and_bound_to_version(self):
         self.good('vk')

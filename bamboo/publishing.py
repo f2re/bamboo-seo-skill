@@ -170,7 +170,7 @@ def export(root: Path, name: str) -> dict:
                             f'<figcaption>{html.escape(photo.get("caption", ""))}</figcaption></figure>')
     content = "\n".join(sections)
     # Remove only obsolete toolkit-generated channel files; never touch original media.
-    for fmt in ("article", "vk", "card", "stories", "carousel", "faq"):
+    for fmt in ("article", "vk", "card", "stories", "carousel", "faq", "instagram"):
         if fmt not in pack["formats"]:
             safe(dest, f"{fmt}.txt").unlink(missing_ok=True)
     if "vk" not in pack["formats"]:

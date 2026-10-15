@@ -15,7 +15,8 @@ from . import __version__
 
 FORMATS = {"article": (800, 1500, "words"), "vk": (800, 1500, "chars"),
            "card": (300, 500, "chars"), "stories": (30, 60, "lines"),
-           "carousel": (0, 0, "none"), "faq": (0, 0, "none")}
+           "carousel": (0, 0, "none"), "faq": (0, 0, "none"),
+           "instagram": (0, 2200, "chars")}
 CHECKS = ("facts", "culture", "voice", "photos", "privacy", "clickbait", "cta")
 DEFAULTS = {
     "schema_version": 1, "brand": "Bamboo Pottery", "language": "ru",

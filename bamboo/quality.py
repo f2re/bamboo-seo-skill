@@ -196,6 +196,13 @@ def validate(root: Path, name: str) -> dict:
             for value in NUMBER.findall(text + " " + cta):
                 if norm(value) not in allowed:
                     fail(f"{fmt}: числовая характеристика без связанного факта: {value}")
+            if fmt == "instagram":
+                if len(full) > 2200:
+                    fail("instagram: подпись длиннее 2200 знаков")
+                if sum(1 for word in full.split() if word.startswith("#")) > 5:
+                    fail("instagram: не больше 5 хэштегов")
+                if item.get("video") is not None and item["video"] not in [v.get("path") for v in pack.get("videos", [])]:
+                    fail("instagram: formats.instagram.video должен быть из pack.videos")
             lower, upper, mode = FORMATS.get(fmt, (0, 0, "none"))
             lengths = ([len(x.strip()) for x in clean(text).splitlines() if x.strip()] if mode == "lines"
                        else [len(re.findall(r"\b[\w-]+\b", full)) if mode == "words" else len(full)])

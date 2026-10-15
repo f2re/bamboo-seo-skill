@@ -2,7 +2,7 @@
 
 Instagram `@bamboopottery` — витрина процесса, продажи — во ВК. Контентный контур тот же, что для ВК:
 фактура → проверка → человеческое утверждение. Новые части: навык `bamboo-reel` и внешний `ffmpeg-skill`.
-Публикуйте первые 15 дней вручную из приложения; автоматизация охват не даёт.
+Публикация — модулем `ig` по поручению владельца или вручную из приложения; автоматизация публикации охват не добавляет.
 
 ## Стек
 
@@ -11,7 +11,8 @@ Instagram `@bamboopottery` — витрина процесса, продажи �
 | Монтаж Reels | [kajisho5/ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill), локально, без ключей | сейчас |
 | Ролики из фото, плашки | HyperFrames (HTML → MP4) | сейчас |
 | Идеи, хуки, подписи | `bamboo-reel` (в этом репозитории) | сейчас |
-| Публикация и статистика | `adelaidasofia/instagram-mcp` (официальный Graph API) или Postiz | со 2-й недели, по желанию |
+| Публикация Reels | модуль `ig` (Instagram Login API + Yandex Object Storage) | после настройки |
+| Статистика | `adelaidasofia/instagram-mcp` или Postiz | по желанию |
 | Обложки и текстовые карточки | Remotion + remotion-dev/skills | позже |
 | Не использовать | instagrapi, postzen (передача логина), auto-editor, PySceneDetect, MoviePy, mcp-video-editor | — |
 
@@ -122,16 +123,56 @@ python3 -m pip install --user yt-dlp
 Рутина: 60–90 минут в день; ответы на комментарии в первый час; 5–10 содержательных комментариев
 у профильных аккаунтов — вручную.
 
-## Вторая неделя: официальный API
+## Публикация: модуль `ig`
 
-1. Приложение Meta (Business, продукт Instagram) на developers.facebook.com.
-2. Путь входа: Facebook Login (нужна страница Facebook) или Instagram API with Instagram Login.
-3. `pip install adelaidasofia-instagram-mcp`, токен и ID по SETUP.md проекта, подключение MCP-сервера
-   вашим клиентом, проверка `healthcheck`.
-4. Публичный https-хостинг для видео: Instagram забирает файл по ссылке.
-5. Токен живёт около 60 дней: напоминание на 55-й день. Хранить только в переменных окружения.
+Свой модуль на официальном Instagram API with Instagram Login (`graph.instagram.com`, без страницы
+Facebook). Ролик загружается в закрытый бакет Yandex Object Storage, Instagram получает временную
+подписанную ссылку на 2 часа, после публикации файл удаляется. Музыку из библиотеки Instagram через
+API добавить нельзя: в ролике остаётся его собственный звук.
 
-Возможность регистрации аккаунта разработчика Meta из России не проверялась.
+### Настройка (один раз)
+
+1. **Профессиональный аккаунт**: Instagram → Настройки → Тип аккаунта и инструменты →
+   Переключиться на профессиональный (тип «Автор» или «Бизнес»).
+2. **Приложение Meta**: developers.facebook.com → My Apps → Create app → тип Business →
+   добавить продукт **Instagram** → «API setup with Instagram login». Добавьте `@bamboopottery`
+   в роли приложения (Instagram Tester) и примите приглашение в Instagram:
+   Настройки → Приложения и сайты → Приглашения тестировщиков.
+3. **Ключ Instagram**: на той же странице «Generate access tokens» → выберите аккаунт → скопируйте
+   ключ (долгий, около 60 дней; нужны права `instagram_business_basic` и
+   `instagram_business_content_publish`). Затем:
+   ```bash
+   python bamboo.py ig token-import
+   ```
+   Ключ продлевается автоматически при использовании, когда ему больше суток и до конца срока
+   меньше 30 дней. Если не пользоваться модулем 60 дней — получите ключ заново.
+4. **Yandex Object Storage**: console.yandex.cloud → Object Storage → создать закрытый бакет
+   (имя без точек). Сервисный аккаунт с ролью `storage.editor` на бакет → создать статический
+   ключ доступа. Затем:
+   ```bash
+   python bamboo.py ig init --bucket ИМЯ_БАКЕТА
+   python bamboo.py ig storage-key-import
+   python bamboo.py ig check
+   ```
+   `check` показывает аккаунт, лимит публикаций и доступ к бакету; ничего не публикует.
+
+Ключи хранятся в `~/.config/bamboo/ig.json` (chmod 600, вне репозитория) либо в переменных
+`BAMBOO_IG_ACCESS_TOKEN`, `BAMBOO_YC_KEY_ID`, `BAMBOO_YC_SECRET`.
+
+### Публикация
+
+В пакете: ролик в `pack.videos`, подпись — формат `instagram` (text + cta, до 2200 знаков,
+не больше 5 хэштегов). После одобрения владельца (`approve SLUG --owner ИМЯ`):
+
+```bash
+python bamboo.py ig plan-post SLUG --request "Поручение владельца"
+python bamboo.py ig apply PLAN_ID --confirm "ig:…" --execute
+```
+
+`plan-post` не обращается к сети. `apply` загружает ролик, создаёт контейнер REELS, ждёт
+обработки до 5 минут, публикует и возвращает ссылку. Если Instagram ещё обрабатывает видео
+или ответ на публикацию потерян, повторите ту же команду: используется тот же контейнер,
+а он не публикуется дважды. Лимит Instagram — 100 публикаций через API за сутки.
 
 ## Риски
 
