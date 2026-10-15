@@ -399,6 +399,20 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(self.api.writes[0][0], "video.wall")
         self.assertEqual(self.api.writes[1][1]["attachments"], ["video-77_501"])
 
+    def test_approved_content_includes_pack_videos(self):
+        path = self.write_video()
+        pack = {"title": "Т", "photos": [], "formats": {"vk": {"text": "Текст", "cta": ""}},
+                "videos": [{"path": path, "title": "Тестовый ролик"}]}
+        with patch("bamboo.quality.require_approval", return_value={}), \
+                patch("bamboo.core.job_path", return_value=self.root), \
+                patch("bamboo.core.read_json", return_value=pack), \
+                patch("bamboo.core.approval_token", return_value="job@hash"):
+            message, files, _ = self.store.approved_content("approved-job")
+            self.assertEqual(files, [path])
+            p = self.store.plan_post("approved-job", "Опубликовать ролик")
+        self.assertEqual([a["operation"] for a in p["plan"]["actions"]], ["video.wall", "post.create"])
+        self.assertEqual(p["plan"]["actions"][1]["params"]["attachments"], ["$0.attachment"])
+
     def test_video_changed_after_plan_no_upload(self):
         p = self.video_plan()
         self.write_video(MP4 + b"changed")

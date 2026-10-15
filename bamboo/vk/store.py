@@ -237,7 +237,8 @@ class Store:
             cta = clean(entry["cta"])
             parts = [p for p in (title, text, cta) if p]
             message = "\n\n".join(parts)
-            return message, [p["path"] for p in pack["photos"]], approval_token(self.root, name)
+            media = [p["path"] for p in pack["photos"]] + [v["path"] for v in pack.get("videos", [])]
+            return message, media, approval_token(self.root, name)
         except BambooError as exc:
             raise VKError(str(exc)) from None
 
